@@ -1,0 +1,847 @@
+{
+  "hospital_name": "Sanjeevani Multispeciality Hospital",
+  "disclaimer": "FICTIONAL DEMONSTRATION DATA ONLY — Cypher 2026 Hackathon Challenge: The Blocked Bed",
+  "reference_timestamp": "2026-10-10T10:00:00",
+  "patients": [
+    {
+      "patient_id": "PAT-EM-01",
+      "age_group": "Geriatric",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-EM-02",
+      "age_group": "Middle-Aged",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-EM-03",
+      "age_group": "Adult",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Under Observation"
+    },
+    {
+      "patient_id": "PAT-EM-04",
+      "age_group": "Pediatric",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Under Observation"
+    },
+    {
+      "patient_id": "PAT-EM-05",
+      "age_group": "Adult",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-EM-06",
+      "age_group": "Adult",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Waiting"
+    },
+    {
+      "patient_id": "PAT-EM-07",
+      "age_group": "Middle-Aged",
+      "department": "Emergency",
+      "visit_type": "Emergency",
+      "status": "Waiting"
+    },
+    {
+      "patient_id": "PAT-ICU-01",
+      "age_group": "Geriatric",
+      "department": "ICU",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-ICU-02",
+      "age_group": "Middle-Aged",
+      "department": "ICU",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-ICU-03",
+      "age_group": "Geriatric",
+      "department": "ICU",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-ICU-04",
+      "age_group": "Adult",
+      "department": "ICU",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-GM-01",
+      "age_group": "Adult",
+      "department": "General Medicine",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-GM-02",
+      "age_group": "Middle-Aged",
+      "department": "General Medicine",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-GM-03",
+      "age_group": "Geriatric",
+      "department": "General Medicine",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-GM-04",
+      "age_group": "Middle-Aged",
+      "department": "General Medicine",
+      "visit_type": "Inpatient",
+      "status": "Admitted"
+    },
+    {
+      "patient_id": "PAT-CARD-01",
+      "age_group": "Geriatric",
+      "department": "Cardiology",
+      "visit_type": "Outpatient",
+      "status": "Waiting"
+    },
+    {
+      "patient_id": "PAT-CARD-02",
+      "age_group": "Middle-Aged",
+      "department": "Cardiology",
+      "visit_type": "Outpatient",
+      "status": "Waiting"
+    },
+    {
+      "patient_id": "PAT-ORTHO-01",
+      "age_group": "Adult",
+      "department": "Orthopedics",
+      "visit_type": "Outpatient",
+      "status": "Waiting"
+    }
+  ],
+  "appointments": [
+    {
+      "appointment_id": "APT-EM-01",
+      "doctor": "Dr. Ramesh Gupta",
+      "department": "Emergency",
+      "datetime": "2026-10-10T08:15:00",
+      "status": "completed",
+      "waiting_time": 45
+    },
+    {
+      "appointment_id": "APT-EM-02",
+      "doctor": "Dr. Ramesh Gupta",
+      "department": "Emergency",
+      "datetime": "2026-10-10T08:45:00",
+      "status": "completed",
+      "waiting_time": 75
+    },
+    {
+      "appointment_id": "APT-EM-03",
+      "doctor": "Dr. Ananya Roy",
+      "department": "Emergency",
+      "datetime": "2026-10-10T09:15:00",
+      "status": "scheduled",
+      "waiting_time": 95
+    },
+    {
+      "appointment_id": "APT-EM-04",
+      "doctor": "Dr. Ananya Roy",
+      "department": "Emergency",
+      "datetime": "2026-10-10T09:30:00",
+      "status": "scheduled",
+      "waiting_time": 110
+    },
+    {
+      "appointment_id": "APT-CARD-01",
+      "doctor": "Dr. Vikram Sethi",
+      "department": "Cardiology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 20
+    },
+    {
+      "appointment_id": "APT-CARD-02",
+      "doctor": "Dr. Vikram Sethi",
+      "department": "Cardiology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 35
+    },
+    {
+      "appointment_id": "APT-CARD-03",
+      "doctor": "Dr. Vikram Sethi",
+      "department": "Cardiology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 45
+    },
+    {
+      "appointment_id": "APT-CARD-04",
+      "doctor": "Dr. Vikram Sethi",
+      "department": "Cardiology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 60
+    },
+    {
+      "appointment_id": "APT-CARD-05",
+      "doctor": "Dr. Vikram Sethi",
+      "department": "Cardiology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 80
+    },
+    {
+      "appointment_id": "APT-ORTH-01",
+      "doctor": "Dr. Suman Das",
+      "department": "Orthopedics",
+      "datetime": "2026-10-10T11:00:00",
+      "status": "cancelled",
+      "waiting_time": 0
+    },
+    {
+      "appointment_id": "APT-ORTH-02",
+      "doctor": "Dr. Suman Das",
+      "department": "Orthopedics",
+      "datetime": "2026-10-10T11:15:00",
+      "status": "cancelled",
+      "waiting_time": 0
+    },
+    {
+      "appointment_id": "APT-ORTH-03",
+      "doctor": "Dr. Suman Das",
+      "department": "Orthopedics",
+      "datetime": "2026-10-10T11:30:00",
+      "status": "no-show",
+      "waiting_time": 0
+    },
+    {
+      "appointment_id": "APT-ORTH-04",
+      "doctor": "Dr. Suman Das",
+      "department": "Orthopedics",
+      "datetime": "2026-10-10T11:45:00",
+      "status": "no-show",
+      "waiting_time": 0
+    },
+    {
+      "appointment_id": "APT-DERM-01",
+      "doctor": "Dr. Pooja Iyer",
+      "department": "Dermatology",
+      "datetime": "2026-10-10T09:30:00",
+      "status": "completed",
+      "waiting_time": 10
+    },
+    {
+      "appointment_id": "APT-DERM-02",
+      "doctor": "Dr. Pooja Iyer",
+      "department": "Dermatology",
+      "datetime": "2026-10-10T10:00:00",
+      "status": "scheduled",
+      "waiting_time": 15
+    }
+  ],
+  "beds": [
+    {
+      "bed_id": "EMERG-01",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-EM-01",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "EMERG-02",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-EM-02",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "EMERG-03",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Occupied",
+      "availability": "Blocked",
+      "admission_discharge_status": "Discharge Paperwork Blocked",
+      "current_admission_id": "ADM-EM-03",
+      "blocked_reason": "Patient clinically fit for discharge; blocked awaiting insurance billing clearance and physician discharge sign-off."
+    },
+    {
+      "bed_id": "EMERG-04",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Occupied",
+      "availability": "Blocked",
+      "admission_discharge_status": "Discharge Paperwork Blocked",
+      "current_admission_id": "ADM-EM-04",
+      "blocked_reason": "Patient discharge authorized; blocked awaiting take-home medication counseling and transport clearance."
+    },
+    {
+      "bed_id": "EMERG-05",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-EM-05",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "EMERG-06",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "EMERG-07",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Unoccupied",
+      "availability": "Cleaning",
+      "admission_discharge_status": "Cleaning Required",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "EMERG-08",
+      "ward": "Emergency Ward",
+      "bed_type": "Emergency",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "ICU-01",
+      "ward": "ICU Ward",
+      "bed_type": "ICU",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-ICU-01",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "ICU-02",
+      "ward": "ICU Ward",
+      "bed_type": "ICU",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-ICU-02",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "ICU-03",
+      "ward": "ICU Ward",
+      "bed_type": "ICU",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-ICU-03",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "ICU-04",
+      "ward": "ICU Ward",
+      "bed_type": "ICU",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-ICU-04",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-01",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-GM-01",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-02",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-GM-04",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-03",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-GM-02",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-04",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Occupied",
+      "availability": "Occupied",
+      "admission_discharge_status": "Occupied",
+      "current_admission_id": "ADM-GM-03",
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-05",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-06",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-07",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-08",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Cleaning",
+      "admission_discharge_status": "Cleaning Required",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-09",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    },
+    {
+      "bed_id": "GEN-10",
+      "ward": "General Ward",
+      "bed_type": "General",
+      "occupancy": "Unoccupied",
+      "availability": "Available",
+      "admission_discharge_status": "Ready",
+      "current_admission_id": null,
+      "blocked_reason": null
+    }
+  ],
+  "staff": [
+    {
+      "staff_id": "STF-DOC-01",
+      "name": "Dr. Ramesh Gupta",
+      "role": "Doctor",
+      "department": "Emergency",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "High"
+    },
+    {
+      "staff_id": "STF-DOC-02",
+      "name": "Dr. Ananya Roy",
+      "role": "Doctor",
+      "department": "Emergency",
+      "shift": "Evening",
+      "availability": "Available",
+      "workload": "Critical"
+    },
+    {
+      "staff_id": "STF-NUR-01",
+      "name": "Nurse Sunita Rao",
+      "role": "Nurse",
+      "department": "Emergency",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "High"
+    },
+    {
+      "staff_id": "STF-NUR-02",
+      "name": "Nurse Preeti Verma",
+      "role": "Nurse",
+      "department": "Emergency",
+      "shift": "Evening",
+      "availability": "Available",
+      "workload": "High"
+    },
+    {
+      "staff_id": "STF-DOC-03",
+      "name": "Dr. Rajesh Kulkarni",
+      "role": "Doctor",
+      "department": "ICU",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "Critical"
+    },
+    {
+      "staff_id": "STF-NUR-03",
+      "name": "Nurse Joseph Mathew",
+      "role": "Nurse",
+      "department": "ICU",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "Critical"
+    },
+    {
+      "staff_id": "STF-DOC-04",
+      "name": "Dr. Vikram Sethi",
+      "role": "Doctor",
+      "department": "Cardiology",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "High"
+    },
+    {
+      "staff_id": "STF-DOC-05",
+      "name": "Dr. Suman Das",
+      "role": "Doctor",
+      "department": "Orthopedics",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "Normal"
+    },
+    {
+      "staff_id": "STF-DOC-06",
+      "name": "Dr. Pooja Iyer",
+      "role": "Doctor",
+      "department": "Dermatology",
+      "shift": "Morning",
+      "availability": "Available",
+      "workload": "Low"
+    },
+    {
+      "staff_id": "STF-DOC-07",
+      "name": "Dr. Manish Mehra",
+      "role": "Doctor",
+      "department": "Dermatology",
+      "shift": "Evening",
+      "availability": "Available",
+      "workload": "Low"
+    },
+    {
+      "staff_id": "STF-NUR-04",
+      "name": "Nurse Kavita Patil",
+      "role": "Nurse",
+      "department": "Dermatology",
+      "shift": "Morning",
+      "availability": "Available",
+      "workload": "Low"
+    },
+    {
+      "staff_id": "STF-TECH-01",
+      "name": "Tech. Amit Shah",
+      "role": "Technician",
+      "department": "Diagnostics",
+      "shift": "Morning",
+      "availability": "On Duty",
+      "workload": "Critical"
+    }
+  ],
+  "diagnostics": [
+    {
+      "test_id": "DIAG-101",
+      "test": "Troponin-T",
+      "patient": "PAT-EM-01",
+      "department": "Emergency",
+      "status": "overdue",
+      "requested_time": "2026-10-10T06:00:00",
+      "expected_completion": "2026-10-10T07:00:00",
+      "completed_time": null
+    },
+    {
+      "test_id": "DIAG-102",
+      "test": "Complete Blood Count (CBC)",
+      "patient": "PAT-EM-02",
+      "department": "Emergency",
+      "status": "overdue",
+      "requested_time": "2026-10-10T06:15:00",
+      "expected_completion": "2026-10-10T07:15:00",
+      "completed_time": null
+    },
+    {
+      "test_id": "DIAG-103",
+      "test": "CT Scan Head",
+      "patient": "PAT-EM-05",
+      "department": "Emergency",
+      "status": "overdue",
+      "requested_time": "2026-10-10T06:30:00",
+      "expected_completion": "2026-10-10T07:45:00",
+      "completed_time": null
+    },
+    {
+      "test_id": "DIAG-104",
+      "test": "Chest X-Ray",
+      "patient": "PAT-EM-03",
+      "department": "Emergency",
+      "status": "completed",
+      "requested_time": "2026-10-10T05:00:00",
+      "expected_completion": "2026-10-10T06:00:00",
+      "completed_time": "2026-10-10T05:55:00"
+    },
+    {
+      "test_id": "DIAG-105",
+      "test": "Serum Electrolytes",
+      "patient": "PAT-ICU-02",
+      "department": "ICU",
+      "status": "in-progress",
+      "requested_time": "2026-10-10T09:15:00",
+      "expected_completion": "2026-10-10T10:30:00",
+      "completed_time": null
+    },
+    {
+      "test_id": "DIAG-106",
+      "test": "Lipid Profile",
+      "patient": "PAT-CARD-01",
+      "department": "Cardiology",
+      "status": "pending",
+      "requested_time": "2026-10-10T09:40:00",
+      "expected_completion": "2026-10-10T11:40:00",
+      "completed_time": null
+    }
+  ],
+  "admissions": [
+    {
+      "admission_id": "ADM-EM-01",
+      "patient_id": "PAT-EM-01",
+      "admission_time": "2026-10-10T05:30:00",
+      "department": "Emergency",
+      "ward": "Emergency Ward",
+      "bed_id": "EMERG-01",
+      "expected_discharge": "2026-10-11T12:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-EM-02",
+      "patient_id": "PAT-EM-02",
+      "admission_time": "2026-10-10T06:00:00",
+      "department": "Emergency",
+      "ward": "Emergency Ward",
+      "bed_id": "EMERG-02",
+      "expected_discharge": "2026-10-11T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-EM-03",
+      "patient_id": "PAT-EM-03",
+      "admission_time": "2026-10-09T14:00:00",
+      "department": "Emergency",
+      "ward": "Emergency Ward",
+      "bed_id": "EMERG-03",
+      "expected_discharge": "2026-10-10T08:00:00",
+      "status": "Discharging"
+    },
+    {
+      "admission_id": "ADM-EM-04",
+      "patient_id": "PAT-EM-04",
+      "admission_time": "2026-10-09T18:00:00",
+      "department": "Emergency",
+      "ward": "Emergency Ward",
+      "bed_id": "EMERG-04",
+      "expected_discharge": "2026-10-10T08:30:00",
+      "status": "Discharging"
+    },
+    {
+      "admission_id": "ADM-EM-05",
+      "patient_id": "PAT-EM-05",
+      "admission_time": "2026-10-10T06:15:00",
+      "department": "Emergency",
+      "ward": "Emergency Ward",
+      "bed_id": "EMERG-05",
+      "expected_discharge": "2026-10-11T18:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-ICU-01",
+      "patient_id": "PAT-ICU-01",
+      "admission_time": "2026-10-08T10:00:00",
+      "department": "ICU",
+      "ward": "ICU Ward",
+      "bed_id": "ICU-01",
+      "expected_discharge": "2026-10-12T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-ICU-02",
+      "patient_id": "PAT-ICU-02",
+      "admission_time": "2026-10-08T16:00:00",
+      "department": "ICU",
+      "ward": "ICU Ward",
+      "bed_id": "ICU-02",
+      "expected_discharge": "2026-10-13T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-ICU-03",
+      "patient_id": "PAT-ICU-03",
+      "admission_time": "2026-10-09T08:00:00",
+      "department": "ICU",
+      "ward": "ICU Ward",
+      "bed_id": "ICU-03",
+      "expected_discharge": "2026-10-14T12:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-ICU-04",
+      "patient_id": "PAT-ICU-04",
+      "admission_time": "2026-10-09T22:00:00",
+      "department": "ICU",
+      "ward": "ICU Ward",
+      "bed_id": "ICU-04",
+      "expected_discharge": "2026-10-15T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-GM-01",
+      "patient_id": "PAT-GM-01",
+      "admission_time": "2026-10-08T11:00:00",
+      "department": "General Medicine",
+      "ward": "General Ward",
+      "bed_id": "GEN-01",
+      "expected_discharge": "2026-10-11T12:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-GM-02",
+      "patient_id": "PAT-GM-02",
+      "admission_time": "2026-10-09T10:00:00",
+      "department": "General Medicine",
+      "ward": "General Ward",
+      "bed_id": "GEN-03",
+      "expected_discharge": "2026-10-12T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-GM-03",
+      "patient_id": "PAT-GM-03",
+      "admission_time": "2026-10-09T15:00:00",
+      "department": "General Medicine",
+      "ward": "General Ward",
+      "bed_id": "GEN-04",
+      "expected_discharge": "2026-10-13T10:00:00",
+      "status": "Active"
+    },
+    {
+      "admission_id": "ADM-GM-04",
+      "patient_id": "PAT-GM-04",
+      "admission_time": "2026-10-09T20:00:00",
+      "department": "General Medicine",
+      "ward": "General Ward",
+      "bed_id": "GEN-02",
+      "expected_discharge": "2026-10-14T10:00:00",
+      "status": "Active"
+    }
+  ],
+  "discharges": [
+    {
+      "discharge_id": "DIS-EM-01",
+      "admission_id": "ADM-EM-03",
+      "patient_id": "PAT-EM-03",
+      "request": "Pending",
+      "pending_tasks": [
+        "Insurance Third-Party Administrator (TPA) billing clearance",
+        "Attending physician final discharge summary sign-off"
+      ],
+      "medication_status": "Completed",
+      "document_status": "Incomplete",
+      "discharge_initiated_at": "2026-10-10T07:30:00"
+    },
+    {
+      "discharge_id": "DIS-EM-02",
+      "admission_id": "ADM-EM-04",
+      "patient_id": "PAT-EM-04",
+      "request": "Pending",
+      "pending_tasks": [
+        "Discharge take-home prescription counseling and pharmacy handover",
+        "Discharge nursing summary sheet signature"
+      ],
+      "medication_status": "Pending Verification",
+      "document_status": "Incomplete",
+      "discharge_initiated_at": "2026-10-10T08:00:00"
+    }
+  ],
+  "feedback": [
+    {
+      "feedback_id": "FDB-901",
+      "complaint": "Waited over 95 minutes in Emergency triage while staff mentioned no beds were ready.",
+      "category": "Waiting Time",
+      "department": "Emergency",
+      "severity": "High",
+      "resolution_status": "Investigating",
+      "timestamp": "2026-10-10T09:45:00"
+    },
+    {
+      "feedback_id": "FDB-902",
+      "complaint": "Emergency cardiac blood tests took nearly 3 hours to arrive, severely holding up doctor decision.",
+      "category": "Diagnostics Delay",
+      "department": "Emergency",
+      "severity": "High",
+      "resolution_status": "Open",
+      "timestamp": "2026-10-10T09:15:00"
+    },
+    {
+      "feedback_id": "FDB-903",
+      "complaint": "Patient was told discharge was ready at 8 AM, but still trapped in bed waiting for insurance paperwork desk.",
+      "category": "Bed Shortage",
+      "department": "Emergency",
+      "severity": "Medium",
+      "resolution_status": "Open",
+      "timestamp": "2026-10-10T09:30:00"
+    },
+    {
+      "feedback_id": "FDB-904",
+      "complaint": "Long queues and double booking at Cardiology consultation desk at 10 AM slot.",
+      "category": "Waiting Time",
+      "department": "Cardiology",
+      "severity": "Medium",
+      "resolution_status": "Investigating",
+      "timestamp": "2026-10-10T09:50:00"
+    }
+  ]
+}
