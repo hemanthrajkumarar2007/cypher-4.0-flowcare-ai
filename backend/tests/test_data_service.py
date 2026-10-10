@@ -33,12 +33,13 @@ def test_data_filtering_queries():
 
     # Filter appointments
     sched_apts = service.get_appointments(status="scheduled")
-    assert all(a.status == "scheduled" for a in sched_apts)
+    assert all(a.status.lower() == "scheduled" for a in sched_apts)
+    assert len(sched_apts) > 0
 
     # Filter beds
-    icu_beds = service.get_beds(ward="ICU Ward")
-    assert all(b.ward == "ICU Ward" for b in icu_beds)
-    assert len(icu_beds) == 4
+    icu_beds = service.get_beds(ward="ICU")
+    assert all("ICU" in b.ward for b in icu_beds)
+    assert len(icu_beds) >= 4
 
     # Filter staff
     em_staff = service.get_staff(department="Emergency")

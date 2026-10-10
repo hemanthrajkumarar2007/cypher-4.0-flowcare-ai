@@ -27,6 +27,7 @@ from models import (
     ActionCompleteRequest,
     AuditLogEntry,
     DashboardSummary,
+    EDWaitTime,
 )
 from services.data_service import hospital_data_service
 from services.detection_service import detection_service
@@ -114,6 +115,12 @@ def root():
     "/data-quality",
     tags=["Data & Quality"],
     summary="Data Quality and Validation Report",
+    response_model=DataQualityReport
+)
+@app.get(
+    "/data/data-quality",
+    tags=["Data & Quality"],
+    include_in_schema=False,
     response_model=DataQualityReport
 )
 def get_data_quality():
@@ -285,6 +292,16 @@ def get_feedback(
     )
 
 
+@app.get(
+    "/data/ed-wait-times",
+    tags=["Data & Quality"],
+    summary="List Emergency Department Hourly Wait Times",
+    response_model=List[EDWaitTime]
+)
+def get_ed_wait_times(date: Optional[str] = Query(None, description="Filter by date YYYY-MM-DD")):
+    return hospital_data_service.get_ed_wait_times(date=date)
+
+
 # ============================================================================
 # Operational Intelligence & Bottleneck Endpoints
 # ============================================================================
@@ -299,7 +316,7 @@ def get_dashboard():
     """Returns high-level KPI overview, bed utilization, bottleneck counts, and departments requiring focus."""
     beds = hospital_data_service.beds
     total_beds = len(beds)
-    occupied_beds = sum(1 for b in beds if b.occupancy == "Occupied")
+    occupied_beds = sum(1 for b in beds if b.occupancy in ["Occupied"])
     available_beds = sum(1 for b in beds if b.availability == "Available")
     blocked_beds = sum(1 for b in beds if b.availability == "Blocked")
     cleaning_beds = sum(1 for b in beds if b.availability == "Cleaning")
@@ -307,8 +324,8 @@ def get_dashboard():
 
     issues = detection_service.detect_all_issues()
     critical_issues = sum(1 for i in issues if i.priority_level == "Critical")
-    overdue_tests = sum(1 for d in hospital_data_service.diagnostics if d.status == "overdue")
-    pending_actions = sum(1 for a in action_service.get_actions() if a.status == "Awaiting review")
+    overdue_tests = sum(1 for d in hospital_data_service.diagnostics if d.status.lower() == "overdue" or d.is_overdue)
+    pending_actions = sum(1 for a in action_service.get_actions() if a.status in ["Awaiting review", "Pending review"])
 
     # Departments needing attention
     dept_counts = {}
@@ -515,6 +532,12 @@ def complete_action(action_id: str, comp_req: ActionCompleteRequest):
     "/audit-log",
     tags=["Actions & Audit"],
     summary="Historical Action Review Audit Log",
+    response_model=List[AuditLogEntry]
+)
+@app.get(
+    "/audit-logs",
+    tags=["Actions & Audit"],
+    include_in_schema=False,
     response_model=List[AuditLogEntry]
 )
 def get_audit_log(action_id: Optional[str] = Query(None, description="Filter audit log by action ID")):

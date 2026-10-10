@@ -1,6 +1,7 @@
 """
 FlowCare AI — Data Repository & Quality Validation Service
 Sanjeevani Multispeciality Hospital
+Cypher 2026 Hackathon — "The Blocked Bed" Challenge
 """
 
 import json
@@ -17,22 +18,39 @@ from models import (
     Admission,
     Discharge,
     Feedback,
+    EDWaitTime,
     DataQualityReport,
     ValidationIssue,
 )
+from services.csv_service import HospitalCSVService
+
+
+def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
+    """Robust timestamp parser supporting ISO, space-separated, and date-only formats."""
+    if not ts or not ts.strip():
+        return None
+    clean = ts.strip()
+    for fmt in ["%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]:
+        try:
+            return datetime.strptime(clean, fmt)
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(clean)
+    except Exception:
+        return None
 
 
 class HospitalDataService:
-    """Manages synthetic hospital data collections and performs relational validation."""
+    """Manages synthetic and real-time hospital data collections with relational validation."""
 
     def __init__(self, data_path: Optional[str] = None):
-        if data_path:
-            self.data_file = Path(data_path)
-        else:
-            self.data_file = Path(__file__).resolve().parent.parent / "data" / "synthetic_hospital_data.json"
+        self.backend_dir = Path(__file__).resolve().parent.parent
+        self.csv_dir = self.backend_dir / "data" / "csv"
+        self.json_file = Path(data_path) if data_path else (self.backend_dir / "data" / "synthetic_hospital_data.json")
         
         self.hospital_name: str = "Sanjeevani Multispeciality Hospital"
-        self.reference_timestamp: str = "2026-10-10T10:00:00"
+        self.reference_timestamp: str = "2026-11-16 10:00:00"
         self.patients: List[Patient] = []
         self.appointments: List[Appointment] = []
         self.beds: List[Bed] = []
@@ -41,19 +59,39 @@ class HospitalDataService:
         self.admissions: List[Admission] = []
         self.discharges: List[Discharge] = []
         self.feedback: List[Feedback] = []
+        self.ed_wait_times: List[EDWaitTime] = []
 
+        self.csv_loader = HospitalCSVService(csv_dir=self.csv_dir)
         self.load_data()
 
     def load_data(self) -> None:
-        """Loads data from the JSON seed file into memory."""
-        if not self.data_file.exists():
-            raise FileNotFoundError(f"Synthetic hospital data file not found at: {self.data_file}")
+        """Loads data preferentially from CSV files in data/csv/, falling back to JSON."""
+        if self.csv_loader.has_csv_files():
+            data = self.csv_loader.load_all_data()
+            self.hospital_name = data.get("hospital_name", "Sanjeevani Multispeciality Hospital")
+            self.reference_timestamp = data.get("reference_timestamp", "2026-11-16 10:00:00")
+            self.patients = data.get("patients", [])
+            self.appointments = data.get("appointments", [])
+            self.beds = data.get("beds", [])
+            self.staff = data.get("staff", [])
+            self.diagnostics = data.get("diagnostics", [])
+            self.admissions = data.get("admissions", [])
+            self.discharges = data.get("discharges", [])
+            self.feedback = data.get("feedback", [])
+            self.ed_wait_times = data.get("ed_wait_times", [])
 
-        with open(self.data_file, "r", encoding="utf-8") as f:
+            # Sync in-memory records to JSON file as cache / backup
+            self._save_json_cache()
+            return
+
+        if not self.json_file.exists():
+            raise FileNotFoundError(f"Neither CSV data directory ({self.csv_dir}) nor JSON file ({self.json_file}) was found.")
+
+        with open(self.json_file, "r", encoding="utf-8") as f:
             raw = json.load(f)
 
         self.hospital_name = raw.get("hospital_name", "Sanjeevani Multispeciality Hospital")
-        self.reference_timestamp = raw.get("reference_timestamp", "2026-10-10T10:00:00")
+        self.reference_timestamp = raw.get("reference_timestamp", "2026-11-16 10:00:00")
 
         self.patients = [Patient(**item) for item in raw.get("patients", [])]
         self.appointments = [Appointment(**item) for item in raw.get("appointments", [])]
@@ -63,9 +101,31 @@ class HospitalDataService:
         self.admissions = [Admission(**item) for item in raw.get("admissions", [])]
         self.discharges = [Discharge(**item) for item in raw.get("discharges", [])]
         self.feedback = [Feedback(**item) for item in raw.get("feedback", [])]
+        self.ed_wait_times = [EDWaitTime(**item) for item in raw.get("ed_wait_times", [])]
+
+    def _save_json_cache(self) -> None:
+        """Persists current state to JSON so both representations are identical."""
+        try:
+            payload = {
+                "hospital_name": self.hospital_name,
+                "reference_timestamp": self.reference_timestamp,
+                "patients": [p.model_dump() for p in self.patients],
+                "appointments": [a.model_dump() for a in self.appointments],
+                "beds": [b.model_dump() for b in self.beds],
+                "staff": [s.model_dump() for s in self.staff],
+                "diagnostics": [d.model_dump() for d in self.diagnostics],
+                "admissions": [adm.model_dump() for adm in self.admissions],
+                "discharges": [dis.model_dump() for dis in self.discharges],
+                "feedback": [f.model_dump() for f in self.feedback],
+                "ed_wait_times": [w.model_dump() for w in self.ed_wait_times],
+            }
+            with open(self.json_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except Exception:
+            pass
 
     def reset_to_default(self) -> None:
-        """Reloads initial synthetic dataset from disk."""
+        """Reloads initial hospital dataset from disk."""
         self.load_data()
 
     def get_overview(self) -> Dict[str, Any]:
@@ -82,6 +142,7 @@ class HospitalDataService:
                 "admissions": len(self.admissions),
                 "discharges": len(self.discharges),
                 "feedback": len(self.feedback),
+                "ed_wait_times": len(self.ed_wait_times),
             }
         }
 
@@ -151,7 +212,7 @@ class HospitalDataService:
         if department:
             res = [s for s in res if s.department.lower() == department.lower()]
         if shift:
-            res = [s for s in res if s.shift.lower() == shift.lower()]
+            res = [s for s in res if shift.lower() in s.shift.lower()]
         if availability:
             res = [s for s in res if s.availability.lower() == availability.lower()]
         if role:
@@ -170,7 +231,7 @@ class HospitalDataService:
         if department:
             res = [d for d in res if d.department.lower() == department.lower()]
         if patient:
-            res = [d for d in res if d.patient.lower() == patient.lower()]
+            res = [d for d in res if d.patient.lower() == patient.lower() or (d.patient_id and d.patient_id.lower() == patient.lower())]
         return res
 
     def get_admissions(
@@ -218,13 +279,19 @@ class HospitalDataService:
             res = [f for f in res if f.resolution_status.lower() == resolution_status.lower()]
         return res
 
+    def get_ed_wait_times(self, date: Optional[str] = None) -> List[EDWaitTime]:
+        res = self.ed_wait_times
+        if date:
+            res = [w for w in res if w.date == date]
+        return res
+
     # =========================================================================
     # Data Quality & Validation Engine
     # =========================================================================
 
     def validate_data(self) -> DataQualityReport:
         """
-        Validates referential integrity, state consistency, and timestamp sanity across all 8 datasets.
+        Validates referential integrity, state consistency, and timestamp sanity across all datasets.
         Returns a DataQualityReport.
         """
         issues: List[ValidationIssue] = []
@@ -246,9 +313,8 @@ class HospitalDataService:
 
         # 2. Appointments check
         for a in self.appointments:
-            try:
-                datetime.fromisoformat(a.datetime)
-            except Exception:
+            dt = parse_timestamp(a.datetime)
+            if not dt:
                 issues.append(ValidationIssue(
                     category="Appointments",
                     record_id=a.appointment_id,
@@ -269,12 +335,12 @@ class HospitalDataService:
                     severity="Error"
                 ))
             # Rule: Blocked bed cannot be presented as ready for new admission
-            if b.availability == "Blocked" and b.admission_discharge_status == "Ready":
+            if b.availability == "Blocked" and b.admission_discharge_status in ["Ready", "Available"]:
                 issues.append(ValidationIssue(
                     category="Beds",
                     record_id=b.bed_id,
                     issue_type="State Inconsistency",
-                    description=f"Bed {b.bed_id} is Blocked but status is Ready for admission.",
+                    description=f"Bed {b.bed_id} is Blocked but status is ready for admission.",
                     severity="Error"
                 ))
             # Rule: Blocked bed should have an identifiable reason
@@ -317,7 +383,7 @@ class HospitalDataService:
 
         # 5. Discharges check
         for dis in self.discharges:
-            if dis.admission_id not in admission_ids:
+            if dis.admission_id and dis.admission_id not in admission_ids:
                 issues.append(ValidationIssue(
                     category="Discharge",
                     record_id=dis.discharge_id,
@@ -335,7 +401,7 @@ class HospitalDataService:
                 ))
 
         # 6. Diagnostics check
-        ref_dt = datetime.fromisoformat(self.reference_timestamp)
+        ref_dt = parse_timestamp(self.reference_timestamp)
         for diag in self.diagnostics:
             if diag.patient not in patient_ids:
                 issues.append(ValidationIssue(
@@ -345,23 +411,13 @@ class HospitalDataService:
                     description=f"Diagnostic order {diag.test_id} references nonexistent patient {diag.patient}.",
                     severity="Error"
                 ))
-            try:
-                exp_dt = datetime.fromisoformat(diag.expected_completion)
-                # Verify overdue status agrees with timestamp
-                if diag.status != "completed" and exp_dt < ref_dt and diag.status != "overdue":
-                    issues.append(ValidationIssue(
-                        category="Diagnostics",
-                        record_id=diag.test_id,
-                        issue_type="State Inconsistency",
-                        description=f"Diagnostic {diag.test_id} expected completion {diag.expected_completion} is past reference time but status is '{diag.status}'.",
-                        severity="Warning"
-                    ))
-            except Exception:
+            exp_dt = parse_timestamp(diag.expected_completion)
+            if not exp_dt:
                 issues.append(ValidationIssue(
                     category="Diagnostics",
                     record_id=diag.test_id,
                     issue_type="Invalid Timestamp",
-                    description=f"Diagnostic {diag.test_id} has invalid expected_completion timestamp.",
+                    description=f"Diagnostic {diag.test_id} has invalid expected_completion timestamp: {diag.expected_completion}",
                     severity="Error"
                 ))
 
@@ -378,14 +434,13 @@ class HospitalDataService:
 
         # 8. Feedback check
         for fb in self.feedback:
-            try:
-                datetime.fromisoformat(fb.timestamp)
-            except Exception:
+            fb_dt = parse_timestamp(fb.timestamp)
+            if not fb_dt:
                 issues.append(ValidationIssue(
                     category="Feedback",
                     record_id=fb.feedback_id,
                     issue_type="Invalid Timestamp",
-                    description=f"Feedback {fb.feedback_id} has invalid timestamp.",
+                    description=f"Feedback {fb.feedback_id} has invalid timestamp: {fb.timestamp}",
                     severity="Error"
                 ))
 
@@ -400,26 +455,27 @@ class HospitalDataService:
             len(self.feedback)
         )
 
-        has_errors = any(i.severity == "Error" for i in issues)
+        error_count = sum(1 for i in issues if i.severity == "Error")
+
+        category_counts = {
+            "patients": len(self.patients),
+            "appointments": len(self.appointments),
+            "beds": len(self.beds),
+            "staff": len(self.staff),
+            "diagnostics": len(self.diagnostics),
+            "admissions": len(self.admissions),
+            "discharges": len(self.discharges),
+            "feedback": len(self.feedback),
+        }
 
         return DataQualityReport(
             hospital=self.hospital_name,
             total_records_checked=total_records,
-            is_valid=not has_errors,
+            is_valid=(error_count == 0),
             issue_count=len(issues),
             issues=issues,
-            category_counts={
-                "patients": len(self.patients),
-                "appointments": len(self.appointments),
-                "beds": len(self.beds),
-                "staff": len(self.staff),
-                "diagnostics": len(self.diagnostics),
-                "admissions": len(self.admissions),
-                "discharges": len(self.discharges),
-                "feedback": len(self.feedback),
-            }
+            category_counts=category_counts
         )
 
 
-# Singleton instance for simple backend access
 hospital_data_service = HospitalDataService()

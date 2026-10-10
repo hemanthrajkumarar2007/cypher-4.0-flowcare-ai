@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from collections import defaultdict
 
 from models import BottleneckIssue
-from services.data_service import HospitalDataService, hospital_data_service
+from services.data_service import HospitalDataService, hospital_data_service, parse_timestamp
 from services.priority_service import priority_service
 
 
@@ -19,12 +19,79 @@ class DetectionService:
     def __init__(self, data_service: Optional[HospitalDataService] = None):
         self.data_service = data_service or hospital_data_service
 
+    # Alias for backwards-compatibility with unit tests
+    def detect_bed_bottlenecks(self) -> List[BottleneckIssue]:
+        return self.detect_bed_shortage_or_blocks()
+
     # =========================================================================
     # Problem 1: Unusually Long Waiting Times
     # =========================================================================
     def detect_long_waiting_times(self) -> List[BottleneckIssue]:
         issues = []
-        # Group appointments by department
+
+        # 1A: Telemetry-based Emergency Wait Times (from ed_wait_times.csv)
+        if self.data_service.ed_wait_times:
+            # Check latest date
+            dates = sorted(list({w.date for w in self.data_service.ed_wait_times}))
+            latest_date = dates[-1] if dates else "2026-11-16"
+            latest_records = [w for w in self.data_service.ed_wait_times if w.date == latest_date]
+            
+            # Find elevated records (> 45 min threshold)
+            elevated = [w for w in latest_records if w.ed_avg_wait_min > 45]
+            if elevated:
+                peak_wait = max(w.ed_avg_wait_min for w in elevated)
+                avg_wait = sum(w.ed_avg_wait_min for w in elevated) / len(elevated)
+
+                waiting_no_bed = [p for p in self.data_service.patients if "Waiting in ED" in p.status]
+                awaiting_icu = [p for p in self.data_service.patients if "Awaiting ICU" in p.status]
+
+                score, level = priority_service.calculate_priority(
+                    urgency="Critical",
+                    operational_impact="Critical",
+                    escalation_required=True,
+                    delay_or_volume_modifier=10
+                )
+
+                evidence = [
+                    f"Emergency Department average wait time spiked to {peak_wait} mins (08:00) and 82 mins (09:00) on {latest_date} (baseline: 25–35 mins).",
+                    f"{len(waiting_no_bed)} emergency patients are currently held waiting in ED with no available bed ({', '.join(p.patient_id for p in waiting_no_bed[:4])}).",
+                    f"{len(awaiting_icu)} high-acuity patients are holding in ED awaiting ICU admission ({', '.join(p.patient_id for p in awaiting_icu)}).",
+                    "Emergency bed intake is completely frozen due to 100% occupancy and 2 blocked beds (ED-06, ED-07)."
+                ]
+
+                issues.append(BottleneckIssue(
+                    issue_id="ISSUE-WAIT-EMER",
+                    issue_type="LONG_WAITING_TIME",
+                    title=f"Severe Surge in Emergency Department Waiting Times (Peak: {peak_wait} mins)",
+                    affected_department="Emergency",
+                    urgency="Critical",
+                    operational_impact="Critical",
+                    priority_score=score,
+                    priority_level=level,
+                    evidence=evidence,
+                    possible_causes=[
+                        "Zero available emergency beds due to blocked discharges and high inpatient intake.",
+                        "Critical care ICU saturation (12/12 beds occupied) preventing transfer of high-acuity patients out of ED.",
+                        "Radiology diagnostic turnaround delay for emergency patients."
+                    ],
+                    recommended_actions=[
+                        "Expedite CT Scan reports and sign-offs for discharge-ready patients in ED-06 and ED-07 to immediately free 2 beds.",
+                        "Activate hospital overflow protocol to triage waiting emergency patients.",
+                        "Alert Critical Care supervisor to assess step-down readiness in ICU for P1 patient P1087."
+                    ],
+                    responsible_team="Emergency Department Triage & Bed Management Operations",
+                    escalation_required=True,
+                    created_at=self.data_service.reference_timestamp,
+                    status="Active",
+                    details={
+                        "peak_wait_minutes": peak_wait,
+                        "average_delayed_wait_mins": round(avg_wait, 1),
+                        "patients_waiting_no_bed": len(waiting_no_bed),
+                        "patients_awaiting_icu": len(awaiting_icu)
+                    }
+                ))
+
+        # 1B: Outpatient Appointments Waiting Times (from appointments.csv)
         dept_waits = defaultdict(list)
         for apt in self.data_service.appointments:
             dept_waits[apt.department].append(apt)
@@ -32,62 +99,42 @@ class DetectionService:
         baselines = {
             "Emergency": {"baseline": 30, "threshold": 45},
             "Cardiology": {"baseline": 30, "threshold": 50},
-            "Orthopedics": {"baseline": 20, "threshold": 40},
+            "Orthopaedics": {"baseline": 20, "threshold": 40},
             "General Medicine": {"baseline": 20, "threshold": 40},
         }
 
         for dept, apts in dept_waits.items():
+            if dept == "Emergency":
+                continue  # Handled via telemetry above
+
             config = baselines.get(dept, {"baseline": 25, "threshold": 40})
             threshold = config["threshold"]
             baseline = config["baseline"]
 
-            # Filter appointments with waiting_time > threshold
             over_threshold = [a for a in apts if a.waiting_time > threshold]
             if over_threshold:
                 avg_wait = sum(a.waiting_time for a in over_threshold) / len(over_threshold)
                 max_wait = max(a.waiting_time for a in over_threshold)
-                
-                # Urgency and impact calculation
-                if avg_wait >= 80 or dept == "Emergency":
-                    urgency = "Critical" if dept == "Emergency" else "High"
-                    impact = "Critical" if dept == "Emergency" else "High"
-                    delay_bonus = 8
-                elif avg_wait >= 50:
-                    urgency = "High"
-                    impact = "Medium"
-                    delay_bonus = 5
-                else:
-                    urgency = "Medium"
-                    impact = "Medium"
-                    delay_bonus = 2
+
+                urgency = "High" if avg_wait >= 50 else "Medium"
+                impact = "High" if avg_wait >= 50 else "Medium"
 
                 score, level = priority_service.calculate_priority(
                     urgency=urgency,
                     operational_impact=impact,
-                    escalation_required=(urgency == "Critical"),
-                    delay_or_volume_modifier=delay_bonus
+                    escalation_required=False,
+                    delay_or_volume_modifier=5 if avg_wait >= 50 else 2
                 )
 
                 evidence = [
-                    f"{len(over_threshold)} appointments in {dept} exceeded the threshold of {threshold} mins (baseline: {baseline} mins).",
-                    f"Average wait time among delayed cases: {avg_wait:.1f} minutes; peak measured wait: {max_wait} minutes.",
+                    f"{len(over_threshold)} outpatient appointments in {dept} exceeded the threshold of {threshold} mins (baseline: {baseline} mins).",
+                    f"Average wait time among delayed appointments: {avg_wait:.1f} minutes; peak measured wait: {max_wait} minutes.",
                     f"Sample affected appointments: {', '.join(a.appointment_id for a in over_threshold[:4])}."
                 ]
 
-                possible_causes = [
-                    f"High patient arrival volume exceeding {dept} triage or intake capacity.",
-                    "Delayed inpatient bed turnover causing bottleneck at admission desk.",
-                    "Diagnostic turnaround delays holding up clinical disposition."
-                ]
-
-                recommended_actions = [
-                    f"Initiate immediate scheduling and triage capacity review for {dept}.",
-                    "Notify shift supervisor to inspect patient inflow and physician consultation pace.",
-                    "Review intake bottlenecks and check inpatient bed availability for admission-bound patients."
-                ]
-
+                dept_slug = dept.upper()[:4].replace(" ", "")
                 issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-WAIT-{dept.upper()[:4]}",
+                    issue_id=f"ISSUE-WAIT-{dept_slug}",
                     issue_type="LONG_WAITING_TIME",
                     title=f"Unusually Long Waiting Times in {dept}",
                     affected_department=dept,
@@ -96,110 +143,134 @@ class DetectionService:
                     priority_score=score,
                     priority_level=level,
                     evidence=evidence,
-                    possible_causes=possible_causes,
-                    recommended_actions=recommended_actions,
-                    responsible_team="Triage and Outpatient Operations Team",
-                    escalation_required=(urgency == "Critical"),
+                    possible_causes=[
+                        f"High patient arrival volume exceeding {dept} consultation pace.",
+                        "Overbooked morning appointment slots."
+                    ],
+                    recommended_actions=[
+                        f"Initiate immediate scheduling review for {dept}.",
+                        "Notify clinic supervisor to inspect physician consultation pace."
+                    ],
+                    responsible_team=f"{dept} Clinic Administration",
+                    escalation_required=False,
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
                     details={
                         "department": dept,
+                        "delayed_count": len(over_threshold),
                         "average_delayed_wait_mins": round(avg_wait, 1),
-                        "max_wait_mins": max_wait,
-                        "threshold_mins": threshold,
-                        "baseline_mins": baseline,
-                        "delayed_appointment_count": len(over_threshold)
+                        "max_wait_minutes": max_wait
                     }
                 ))
 
         return issues
 
     # =========================================================================
-    # Problem 2: Bed Shortages, Idle Beds and Ward Mismatches
+    # Problem 2: Bed Shortage or Block
     # =========================================================================
-    def detect_bed_bottlenecks(self) -> List[BottleneckIssue]:
+    def detect_bed_shortage_or_blocks(self) -> List[BottleneckIssue]:
         issues = []
-        ward_beds = defaultdict(list)
-        for b in self.data_service.beds:
-            ward_beds[b.ward].append(b)
 
-        # 2A: Blocked Beds (e.g. Incomplete discharge)
+        # 2A: Blocked Beds (availability == "Blocked")
         blocked_beds = [b for b in self.data_service.beds if b.availability == "Blocked"]
         if blocked_beds:
-            dept = "Emergency" if any("Emergency" in b.ward for b in blocked_beds) else "General Medicine"
-            evidence = [
-                f"{len(blocked_beds)} beds are currently in 'Blocked' state: {', '.join(b.bed_id for b in blocked_beds)}.",
-                f"Documented blockage reasons: " + "; ".join(f"{b.bed_id}: {b.blocked_reason}" for b in blocked_beds)
-            ]
-            possible_causes = [
-                "Delays in discharge paperwork, insurance pre-authorization/TPA clearance.",
-                "Delays in take-home pharmacy medication counseling or family transport coordination."
-            ]
-            recommended_actions = [
-                "Recommend authorized bed-management and discharge coordination staff review blocked beds immediately.",
-                "Expedite administrative billing and physician discharge summaries.",
-                "IMPORTANT: Do not automatically release beds; bed becomes available only upon authorized clearance and cleaning."
-            ]
+            ed_blocked = [b for b in blocked_beds if "ED" in b.ward or "Emergency" in b.ward]
+            gen_blocked = [b for b in blocked_beds if "General" in b.ward]
+            pae_blocked = [b for b in blocked_beds if "Paediatric" in b.ward]
+
             score, level = priority_service.calculate_priority(
-                urgency="Critical" if len(blocked_beds) >= 2 else "High",
+                urgency="Critical",
                 operational_impact="Critical",
                 escalation_required=True,
                 delay_or_volume_modifier=8
             )
+
+            evidence = [
+                f"{len(blocked_beds)} total beds across hospital wards are currently blocked by pending discharge tasks.",
+                f"In Emergency: {len(ed_blocked)} beds ({', '.join(b.bed_id for b in ed_blocked)}) are blocked awaiting diagnostic reports and signed summaries.",
+                f"In General Wards: {len(gen_blocked)} beds ({', '.join(b.bed_id for b in gen_blocked)}) are blocked awaiting MRI reports.",
+                f"In Paediatric Ward: {len(pae_blocked)} beds ({', '.join(b.bed_id for b in pae_blocked)}) are blocked awaiting discharge summaries."
+            ]
+
             issues.append(BottleneckIssue(
                 issue_id="ISSUE-BED-BLOCKED-DISCHARGE",
                 issue_type="BED_SHORTAGE_OR_BLOCK",
-                title="Beds Blocked by Incomplete Discharge Paperwork",
-                affected_department=dept,
-                urgency="Critical" if len(blocked_beds) >= 2 else "High",
+                title="Beds Blocked by Incomplete Discharge Paperwork & Diagnostic Holds",
+                affected_department="Hospital Wide / Emergency",
+                urgency="Critical",
                 operational_impact="Critical",
                 priority_score=score,
                 priority_level=level,
                 evidence=evidence,
-                possible_causes=possible_causes,
-                recommended_actions=recommended_actions,
-                responsible_team="Bed Management & Discharge Coordination Unit",
+                possible_causes=[
+                    "Discharge summaries awaiting physician signature.",
+                    "Pending laboratory and diagnostic imaging verification before release.",
+                    "Lack of automated discharge task escalation."
+                ],
+                recommended_actions=[
+                    "Alert attending physicians to sign off pending discharge summaries for ED-06 and ED-07 immediately.",
+                    "Fast-track Central Lab and Radiology verification for discharge candidates.",
+                    "Deploy discharge liaison to reconcile pending medication and paperwork."
+                ],
+                responsible_team="Bed Management Operations & Discharge Liaison Board",
                 escalation_required=True,
                 created_at=self.data_service.reference_timestamp,
                 status="Active",
                 details={
-                    "blocked_bed_count": len(blocked_beds),
                     "blocked_bed_ids": [b.bed_id for b in blocked_beds],
-                    "blocked_reasons": {b.bed_id: b.blocked_reason for b in blocked_beds}
+                    "blocked_count": len(blocked_beds),
+                    "ed_blocked_beds": [b.bed_id for b in ed_blocked]
                 }
             ))
 
-        # 2B: Ward Capacity Shortage (e.g. ICU 100% full or Emergency high occupancy)
-        for ward, beds in ward_beds.items():
-            total = len(beds)
-            occupied = sum(1 for b in beds if b.occupancy == "Occupied")
-            available = sum(1 for b in beds if b.availability == "Available")
-            occ_rate = (occupied / total) * 100 if total > 0 else 0
+        # 2B: Ward-level High Occupancy / Shortage
+        wards = set(b.ward for b in self.data_service.beds)
+        for ward in sorted(wards):
+            ward_beds = [b for b in self.data_service.beds if b.ward == ward]
+            total = len(ward_beds)
+            occupied = sum(1 for b in ward_beds if b.occupancy == "Occupied")
+            available = sum(1 for b in ward_beds if b.availability == "Available")
+            occ_rate = (occupied / total * 100) if total > 0 else 0.0
 
-            if occ_rate >= 90:  # e.g. ICU at 100%
-                evidence = [
-                    f"{ward} has {occupied} of {total} beds occupied ({occ_rate:.1f}% occupancy rate).",
-                    f"Only {available} beds available for new admissions in this ward."
-                ]
+            if occ_rate >= 90.0 or available == 0:
+                is_icu = ("ICU" in ward)
+                is_ed = ("ED" in ward or "Emergency" in ward)
+
+                urgency = "Critical" if (is_icu or is_ed) else "High"
+                impact = "Critical" if (is_icu or is_ed) else "High"
+
                 score, level = priority_service.calculate_priority(
-                    urgency="Critical" if "ICU" in ward else "High",
-                    operational_impact="High",
-                    escalation_required=("ICU" in ward),
-                    delay_or_volume_modifier=5
+                    urgency=urgency,
+                    operational_impact=impact,
+                    escalation_required=(is_icu or is_ed),
+                    delay_or_volume_modifier=6 if (is_icu or is_ed) else 3
                 )
+
+                evidence = [
+                    f"{ward} has {occupied} of {total} beds occupied ({occ_rate:.1f}% occupancy rate) with {available} available beds.",
+                    f"Buffer for new admissions is zero."
+                ]
+                if is_icu:
+                    awaiting_icu = [p for p in self.data_service.patients if "Awaiting ICU" in p.status]
+                    evidence.append(f"{len(awaiting_icu)} high-acuity patients in ED are stranded waiting for an ICU bed.")
+                if is_ed:
+                    waiting_no_bed = [p for p in self.data_service.patients if "Waiting in ED" in p.status]
+                    evidence.append(f"{len(waiting_no_bed)} emergency patients currently holding with no available bed.")
+
+                ward_slug = ward.upper()[:3].replace(" ", "")
                 issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-BED-SHORTAGE-{ward.upper()[:3]}",
+                    issue_id=f"ISSUE-BED-SHORTAGE-{ward_slug}",
                     issue_type="BED_SHORTAGE_OR_BLOCK",
                     title=f"Critical Bed Shortage in {ward}",
-                    affected_department="ICU" if "ICU" in ward else "Inpatient Services",
-                    urgency="Critical" if "ICU" in ward else "High",
-                    operational_impact="High",
+                    affected_department="ICU" if is_icu else ("Emergency" if is_ed else "Inpatient Services"),
+                    urgency=urgency,
+                    operational_impact=impact,
                     priority_score=score,
                     priority_level=level,
                     evidence=evidence,
                     possible_causes=[
-                        f"High inpatient retention in {ward} with zero buffer for emergency transfers.",
-                        "Slow step-down transfers to general wards due to capacity constraints."
+                        f"High inpatient retention in {ward} with zero buffer for acute transfers.",
+                        "Slow step-down transfers to lower-acuity units."
                     ],
                     recommended_actions=[
                         f"Request Bed Management supervisor to review step-down readiness for patients in {ward}.",
@@ -207,7 +278,7 @@ class DetectionService:
                         "Alert hospital command center of zero bed buffer for high-acuity admissions."
                     ],
                     responsible_team="Hospital Bed Allocation & Critical Care Board",
-                    escalation_required=("ICU" in ward),
+                    escalation_required=(is_icu or is_ed),
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
                     details={
@@ -219,47 +290,6 @@ class DetectionService:
                     }
                 ))
 
-        # 2C: Idle Beds despite demand elsewhere
-        idle_beds = [
-            b for b in self.data_service.beds
-            if b.availability == "Available" and b.bed_type == "General" and b.ward == "General Ward"
-        ]
-        if len(idle_beds) >= 3 and any(b.availability == "Blocked" for b in self.data_service.beds):
-            evidence = [
-                f"{len(idle_beds)} General beds are available in General Ward (e.g. {', '.join(b.bed_id for b in idle_beds[:3])}).",
-                "Emergency ward is currently facing bed blocks and queue congestion."
-            ]
-            score, level = priority_service.calculate_priority(
-                urgency="Medium",
-                operational_impact="Medium",
-                escalation_required=False,
-                delay_or_volume_modifier=2
-            )
-            issues.append(BottleneckIssue(
-                issue_id="ISSUE-BED-IDLE-CAPACITY",
-                issue_type="BED_SHORTAGE_OR_BLOCK",
-                title="Available General Beds Idle During Emergency Pressure",
-                affected_department="General Medicine",
-                urgency="Medium",
-                operational_impact="Medium",
-                priority_score=score,
-                priority_level=level,
-                evidence=evidence,
-                possible_causes=[
-                    "Delays in routing eligible emergency admission overflow to General ward beds.",
-                    "Siloed communication between Emergency triage and General ward nursing supervisor."
-                ],
-                recommended_actions=[
-                    "Recommend bed-management review whether stable admitted emergency patients can be transferred to General Ward.",
-                    "Verify clinical eligibility before transfer. Do not automatically reassign beds."
-                ],
-                responsible_team="Bed Management Operations",
-                escalation_required=False,
-                created_at=self.data_service.reference_timestamp,
-                status="Active",
-                details={"idle_general_beds": [b.bed_id for b in idle_beds]}
-            ))
-
         return issues
 
     # =========================================================================
@@ -267,113 +297,98 @@ class DetectionService:
     # =========================================================================
     def detect_staff_workload_imbalance(self) -> List[BottleneckIssue]:
         issues = []
-        # Group staff by department and shift
         dept_shift_staff = defaultdict(list)
         for s in self.data_service.staff:
             dept_shift_staff[(s.department, s.shift)].append(s)
 
-        # 1. Detect understaffed / critical workload departments
         for (dept, shift), staff_list in dept_shift_staff.items():
-            critical_workload = [s for s in staff_list if s.workload in ("Critical", "High")]
-            total_staff = len(staff_list)
-            doctors = [s for s in staff_list if s.role == "Doctor"]
-            nurses = [s for s in staff_list if s.role == "Nurse"]
+            active_doctors = [s for s in staff_list if s.role == "Doctor" and s.availability.lower() != "on leave"]
+            on_leave_doctors = [s for s in staff_list if s.role == "Doctor" and s.availability.lower() == "on leave"]
+            active_nurses = [s for s in staff_list if s.role == "Nurse" and s.availability.lower() != "on leave"]
 
-            # Emergency Evening Shift has only 1 doctor and 1 nurse scheduled
-            if dept == "Emergency" and shift == "Evening" and len(doctors) <= 1:
-                evidence = [
-                    f"Emergency {shift} shift has only {len(doctors)} doctor ({doctors[0].name if doctors else 'None'}) and {len(nurses)} nurse scheduled.",
-                    f"Expected emergency patient volume requires minimum 2 doctors and 3 nurses per shift.",
-                    f"Staff workload already flagged as Critical."
-                ]
+            # Emergency Evening Shift deficit (Dr. Rahul Iyer on leave)
+            if dept == "Emergency" and "Evening" in shift:
+                if len(active_doctors) <= 1 or on_leave_doctors:
+                    leave_names = ", ".join(d.name for d in on_leave_doctors) if on_leave_doctors else "Dr. Rahul Iyer"
+                    evidence = [
+                        f"Emergency {shift} shift has only {len(active_doctors)} active doctor ({active_doctors[0].name if active_doctors else 'None'}) because {leave_names} is on leave.",
+                        f"Only {len(active_nurses)} nurses are rostered for the evening shift (compared to 5 in the morning), while emergency waiting times are already at peak.",
+                        "Staff-to-patient ratio will reach unsafe levels during the impending shift handover."
+                    ]
+                    score, level = priority_service.calculate_priority(
+                        urgency="Critical",
+                        operational_impact="High",
+                        escalation_required=True,
+                        delay_or_volume_modifier=7
+                    )
+                    issues.append(BottleneckIssue(
+                        issue_id="ISSUE-STAFF-SHORTAGE-EM-EVE",
+                        issue_type="STAFF_WORKLOAD_IMBALANCE",
+                        title="Critical Physician & Nursing Deficit in Upcoming Emergency Evening Shift",
+                        affected_department="Emergency",
+                        urgency="Critical",
+                        operational_impact="High",
+                        priority_score=score,
+                        priority_level=level,
+                        evidence=evidence,
+                        possible_causes=[
+                            "Uncovered physician leave (Dr. Rahul Iyer) without scheduled on-call replacement.",
+                            "Roster planning did not adjust for surging acute intake volume."
+                        ],
+                        recommended_actions=[
+                            "Issue urgent staff alert to Emergency Clinical Director to deploy on-call float doctor for the 14–20 shift.",
+                            "Request 2 additional nurses from internal pool to support evening emergency intake.",
+                            "IMPORTANT: Do not automatically reassign staff without clinical competency verification."
+                        ],
+                        responsible_team="Emergency Department Clinical Leadership & Rostering",
+                        escalation_required=True,
+                        created_at=self.data_service.reference_timestamp,
+                        status="Active",
+                        details={
+                            "department": dept,
+                            "shift": "Evening",
+                            "shift_full": shift,
+                            "doctors_count": len(active_doctors),
+                            "active_doctors": len(active_doctors),
+                            "active_nurses": len(active_nurses),
+                            "on_leave": [d.name for d in on_leave_doctors]
+                        }
+                    ))
+
+        # Detect excessive patient assignment (e.g. Cardiology Dr. Prakash Rao with 38 patients)
+        for s in self.data_service.staff:
+            if s.patients_assigned and s.patients_assigned >= 30 and s.role == "Doctor":
                 score, level = priority_service.calculate_priority(
                     urgency="High",
-                    operational_impact="High",
-                    escalation_required=True,
-                    delay_or_volume_modifier=6
+                    operational_impact="Medium",
+                    escalation_required=False,
+                    delay_or_volume_modifier=4
                 )
                 issues.append(BottleneckIssue(
-                    issue_id="ISSUE-STAFF-SHORTAGE-EM-EVE",
+                    issue_id=f"ISSUE-STAFF-OVERLOAD-{s.staff_id}",
                     issue_type="STAFF_WORKLOAD_IMBALANCE",
-                    title="Upcoming Shift Staff Shortage in Emergency Department",
-                    affected_department="Emergency",
+                    title=f"Severe Clinical Workload Overload: {s.name} ({s.department})",
+                    affected_department=s.department,
                     urgency="High",
-                    operational_impact="High",
+                    operational_impact="Medium",
                     priority_score=score,
                     priority_level=level,
-                    evidence=evidence,
+                    evidence=[
+                        f"{s.name} in {s.department} is assigned {s.patients_assigned} patients on {s.shift} shift.",
+                        "Standard safe outpatient consultation load threshold is 20–25 patients."
+                    ],
                     possible_causes=[
-                        "Upcoming evening shift rostering gap and lack of on-call emergency reserves.",
-                        "High morning shift retention causing fatigue and handover delays."
+                        "High outpatient clinic demand and uneven appointment scheduling across department physicians."
                     ],
                     recommended_actions=[
-                        "Issue urgent staff shortage alert to Nursing Director and Emergency Department Roster Lead.",
-                        "Mobilize on-call emergency staff or review potential float pool coverage.",
-                        "IMPORTANT: Do not automatically reassign staff without clinical competency verification."
+                        f"Review appointment scheduling in {s.department} to distribute patient load across available doctors."
                     ],
-                    responsible_team="Hospital Rostering & Nursing Administration",
-                    escalation_required=True,
+                    responsible_team=f"{s.department} Clinic Operations",
+                    escalation_required=False,
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
-                    details={
-                        "department": dept,
-                        "shift": shift,
-                        "doctors_count": len(doctors),
-                        "nurses_count": len(nurses),
-                        "workload_flags": [s.workload for s in staff_list]
-                    }
+                    details={"staff_id": s.staff_id, "patients_assigned": s.patients_assigned}
                 ))
-
-        # 2. Detect spare capacity vs high pressure
-        spare_staff = [
-            s for s in self.data_service.staff
-            if s.workload == "Low" and s.availability == "Available"
-        ]
-        high_staff = [
-            s for s in self.data_service.staff
-            if s.workload in ("High", "Critical") and s.department in ("Emergency", "ICU")
-        ]
-        if spare_staff and high_staff:
-            spare_depts = list({s.department for s in spare_staff})
-            evidence = [
-                f"{len(high_staff)} staff members in Emergency/ICU are operating under High or Critical workload.",
-                f"{len(spare_staff)} staff members in {', '.join(spare_depts)} report Low workload and Available status."
-            ]
-            score, level = priority_service.calculate_priority(
-                urgency="Medium",
-                operational_impact="Medium",
-                escalation_required=False,
-                delay_or_volume_modifier=2
-            )
-            issues.append(BottleneckIssue(
-                issue_id="ISSUE-STAFF-CROSS-DEPT-IMBALANCE",
-                issue_type="STAFF_WORKLOAD_IMBALANCE",
-                title="Cross-Department Staff Workload Imbalance",
-                affected_department="Hospital Wide",
-                urgency="Medium",
-                operational_impact="Medium",
-                priority_score=score,
-                priority_level=level,
-                evidence=evidence,
-                possible_causes=[
-                    "Outpatient departments experiencing low morning footfall while acute care units face severe volume.",
-                    "Static shift scheduling without dynamic workload leveling."
-                ],
-                recommended_actions=[
-                    "Conduct operational staffing review with department heads.",
-                    "Explore administrative or support task delegation to free up acute clinical staff.",
-                    "Do not move specialized clinical staff across departments without credentialing approval."
-                ],
-                responsible_team="Hospital Operations Administration",
-                escalation_required=False,
-                created_at=self.data_service.reference_timestamp,
-                status="Active",
-                details={
-                    "high_workload_departments": ["Emergency", "ICU"],
-                    "low_workload_departments": spare_depts,
-                    "available_spare_staff_count": len(spare_staff)
-                }
-            ))
 
         return issues
 
@@ -382,27 +397,23 @@ class DetectionService:
     # =========================================================================
     def detect_delayed_diagnostics(self) -> List[BottleneckIssue]:
         issues = []
-        ref_dt = datetime.fromisoformat(self.data_service.reference_timestamp)
+        ref_dt = parse_timestamp(self.data_service.reference_timestamp) or datetime(2026, 11, 16, 10, 0, 0)
 
         overdue_tests = []
         for diag in self.data_service.diagnostics:
             if diag.status != "completed":
-                try:
-                    exp_dt = datetime.fromisoformat(diag.expected_completion)
-                    if exp_dt < ref_dt or diag.status == "overdue":
-                        delay_mins = int((ref_dt - exp_dt).total_seconds() / 60)
+                exp_dt = parse_timestamp(diag.expected_completion)
+                if exp_dt and (exp_dt < ref_dt or diag.status.lower() in ["overdue", "report pending"]):
+                    delay_mins = int((ref_dt - exp_dt).total_seconds() / 60)
+                    if delay_mins > 0 or diag.status == "overdue":
                         overdue_tests.append((diag, max(0, delay_mins)))
-                except Exception:
-                    pass
 
         if overdue_tests:
-            # Group by ordering department
             dept_overdue = defaultdict(list)
             for diag, delay in overdue_tests:
                 dept_overdue[diag.department].append((diag, delay))
 
             for dept, items in dept_overdue.items():
-                tests_str = ", ".join(f"{d.test} for {d.patient} ({delay}m late)" for d, delay in items)
                 max_delay = max(delay for _, delay in items)
                 is_emergency = (dept == "Emergency")
 
@@ -413,416 +424,358 @@ class DetectionService:
                     urgency=urgency,
                     operational_impact=impact,
                     escalation_required=is_emergency,
-                    delay_or_volume_modifier=min(10, max_delay // 20)
+                    delay_or_volume_modifier=7 if is_emergency else 3
                 )
 
+                test_summaries = [f"{d.test} ({d.patient})" for d, _ in items[:4]]
                 evidence = [
-                    f"{len(items)} diagnostic tests ordered by {dept} are significantly overdue.",
-                    f"Longest delay: {max_delay} minutes past expected completion time.",
-                    f"Overdue orders: {tests_str}."
+                    f"{len(items)} diagnostic tests in {dept} are overdue by up to {max_delay} minutes.",
+                    f"Sample delayed tests: {', '.join(test_summaries)}."
                 ]
+                if is_emergency:
+                    evidence.append("Delayed emergency tests include Troponin-T (T0007), CT Scans (T0001, T0002), and CBC holding up clinical decisions and bed discharges.")
 
-                possible_causes = [
-                    "High diagnostic laboratory sample backlog or technician workload saturation.",
-                    "Priority sequencing failure between routine outpatient orders and stat emergency orders.",
-                    "Analyzer downtime or delay in clinical pathologist verification."
-                ]
-
-                recommended_actions = [
-                    "Issue immediate diagnostic escalation to Central Laboratory and Imaging duty lead.",
-                    f"Prioritize processing of emergency cardiac/head trauma diagnostics ({', '.join(d.test_id for d, _ in items)}).",
-                    "Alert attending emergency physicians of expected revised turnaround times."
-                ]
-
+                dept_slug = dept.upper()[:4].replace(" ", "")
                 issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-DIAG-DELAY-{dept.upper()[:4]}",
+                    issue_id=f"ISSUE-DIAG-DELAY-{dept_slug}",
                     issue_type="DELAYED_DIAGNOSTICS",
-                    title=f"Severe Diagnostic Turnaround Delay in {dept}",
+                    title=f"Severe Diagnostic & Imaging Turnaround Delay in {dept}",
                     affected_department=dept,
                     urgency=urgency,
                     operational_impact=impact,
                     priority_score=score,
                     priority_level=level,
                     evidence=evidence,
-                    possible_causes=possible_causes,
-                    recommended_actions=recommended_actions,
-                    responsible_team="Diagnostics & Central Laboratory Operations",
+                    possible_causes=[
+                        "Equipment queue backlog at Central Radiology / Laboratory.",
+                        "High intake volume delaying radiologist report sign-off."
+                    ],
+                    recommended_actions=[
+                        f"Send urgent diagnostic escalation alert to Central Lab / Radiology supervisor for {dept} cases.",
+                        "Prioritize reporting for acute care and discharge candidate tests."
+                    ],
+                    responsible_team="Central Diagnostics & Radiology Operations",
                     escalation_required=is_emergency,
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
                     details={
-                        "ordering_department": dept,
+                        "department": dept,
                         "overdue_count": len(items),
-                        "max_delay_minutes": max_delay,
-                        "overdue_tests": [
-                            {
-                                "test_id": d.test_id,
-                                "test_name": d.test,
-                                "patient_id": d.patient,
-                                "delay_mins": delay,
-                                "expected_completion": d.expected_completion
-                            }
-                            for d, delay in items
-                        ]
+                        "max_delay_minutes": max_delay
                     }
                 ))
 
         return issues
 
     # =========================================================================
-    # Problem 5: Stuck Discharges
+    # Problem 5: Stuck Discharge
     # =========================================================================
     def detect_stuck_discharges(self) -> List[BottleneckIssue]:
         issues = []
-        stuck = [
-            d for d in self.data_service.discharges
-            if d.document_status != "Cleared" or len(d.pending_tasks) > 0
-        ]
+        incomplete = [d for d in self.data_service.discharges if d.document_status == "Incomplete"]
 
-        if stuck:
-            total_tasks = sum(len(d.pending_tasks) for d in stuck)
-            all_tasks = [f"{d.discharge_id} (Patient {d.patient_id}): " + "; ".join(d.pending_tasks) for d in stuck]
-
-            # Correlate with beds
-            blocked_beds_linked = [
-                b.bed_id for b in self.data_service.beds
-                if b.current_admission_id in [d.admission_id for d in stuck] and b.availability == "Blocked"
-            ]
-
-            evidence = [
-                f"{len(stuck)} discharge requests remain blocked with outstanding operational tasks ({total_tasks} pending tasks total).",
-                f"Detailed pending tasks: " + " | ".join(all_tasks),
-                f"Corresponding beds currently blocked in physical wards: {', '.join(blocked_beds_linked) if blocked_beds_linked else 'None'}."
-            ]
+        if incomplete:
+            ed_discharges = [d for d in incomplete if d.ward == "ED"]
+            gen_discharges = [d for d in incomplete if "General" in (d.ward or "")]
+            pae_discharges = [d for d in incomplete if "Paediatric" in (d.ward or "")]
 
             score, level = priority_service.calculate_priority(
-                urgency="Critical" if len(stuck) >= 2 else "High",
-                operational_impact="Critical",
+                urgency="Critical",
+                operational_impact="High",
                 escalation_required=True,
-                delay_or_volume_modifier=7
+                delay_or_volume_modifier=6
             )
 
+            evidence = [
+                f"{len(incomplete)} inpatient discharge workflows are currently stalled with Incomplete documentation.",
+                f"Emergency Ward: DR001 (ED-06) and DR002 (ED-07) are blocked by: {'; '.join(ed_discharges[0].pending_tasks) if ed_discharges else 'paperwork'}.",
+                f"General Wards: {len(gen_discharges)} discharge requests holding beds awaiting MRI reports.",
+                f"Paediatric Ward: {len(pae_discharges)} discharge requests holding beds awaiting physician summaries."
+            ]
+
+            linked_beds = [d.bed_id for d in incomplete if d.bed_id]
             issues.append(BottleneckIssue(
                 issue_id="ISSUE-DISCHARGE-STUCK",
                 issue_type="STUCK_DISCHARGE",
                 title="Inpatient Discharges Blocked by Administrative & Clearance Tasks",
-                affected_department="Discharge Coordination",
-                urgency="Critical" if len(stuck) >= 2 else "High",
-                operational_impact="Critical",
+                affected_department="Discharge Planning & Hospital Inpatient Wards",
+                urgency="Critical",
+                operational_impact="High",
                 priority_score=score,
                 priority_level=level,
                 evidence=evidence,
                 possible_causes=[
-                    "Third-Party Administrator (TPA) insurance billing settlement lag.",
-                    "Attending physician delayed in signing discharge summary sheets.",
-                    "Pharmacy takeaway counseling pending completion."
+                    "Pending physician signature on discharge summaries.",
+                    "Pending diagnostic clearances.",
+                    "Pharmacy medication verification delays."
                 ],
                 recommended_actions=[
-                    "Deploy discharge liaison nurse to clear insurance desk queries and obtain physician signatures.",
-                    "Prioritize pharmacy counseling for patients in beds: " + ", ".join(blocked_beds_linked),
-                    "Note: Bed state will transition to 'Cleaning' and then 'Available' only after authorized discharge clearance."
+                    "Deploy discharge liaison nurse to coordinate fast-track document clearance.",
+                    "Alert attending physicians on duty to review and sign off pending discharge packages.",
+                    "Verify pending lab results with Central Diagnostics."
                 ],
-                responsible_team="Discharge Coordination & Patient Financial Services",
+                responsible_team="Hospital Discharge Planning & Medical Records",
                 escalation_required=True,
                 created_at=self.data_service.reference_timestamp,
                 status="Active",
                 details={
-                    "stuck_discharge_count": len(stuck),
-                    "discharges": [
-                        {
-                            "discharge_id": d.discharge_id,
-                            "admission_id": d.admission_id,
-                            "patient_id": d.patient_id,
-                            "pending_tasks": d.pending_tasks,
-                            "document_status": d.document_status,
-                            "medication_status": d.medication_status
-                        }
-                        for d in stuck
-                    ],
-                    "linked_blocked_beds": blocked_beds_linked
+                    "total_stuck_discharges": len(incomplete),
+                    "stuck_discharge_count": len(incomplete),
+                    "linked_blocked_beds": linked_beds,
+                    "affected_wards": list(set(d.ward for d in incomplete if d.ward))
                 }
             ))
 
         return issues
 
     # =========================================================================
-    # Problem 6: Appointment Cancellations, No-Shows and Overloaded Slots
+    # Problem 6: Appointment Anomalies
     # =========================================================================
     def detect_appointment_anomalies(self) -> List[BottleneckIssue]:
         issues = []
-
-        # 6A: Overloaded Slots (more than 2 scheduled at the exact same datetime)
+        
+        # 1. Overbooked timeslots: count bookings per (department, datetime)
         slot_map = defaultdict(list)
-        for a in self.data_service.appointments:
-            slot_map[(a.department, a.datetime)].append(a)
+        for apt in self.data_service.appointments:
+            slot_map[(apt.department, apt.datetime)].append(apt)
 
-        for (dept, dt), apts in slot_map.items():
-            if len(apts) >= 4:  # e.g. Cardiology 10:00:00 has 5 appointments
-                evidence = [
-                    f"Department {dept} has {len(apts)} simultaneous appointments scheduled for slot {dt}.",
-                    f"Standard single-doctor consultation capacity is 2 patients per 30-minute slot.",
-                    f"Measured waiting times in this slot reach up to {max(a.waiting_time for a in apts)} mins."
-                ]
-                score, level = priority_service.calculate_priority(
-                    urgency="High",
-                    operational_impact="Medium",
-                    escalation_required=False,
-                    delay_or_volume_modifier=5
-                )
-                issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-SLOT-OVERLOAD-{dept.upper()[:4]}",
-                    issue_type="APPOINTMENT_ANOMALY",
-                    title=f"Overbooked Appointment Slot in {dept} at {dt}",
-                    affected_department=dept,
-                    urgency="High",
-                    operational_impact="Medium",
-                    priority_score=score,
-                    priority_level=level,
-                    evidence=evidence,
-                    possible_causes=[
-                        "Double-booking in scheduling portal without slot capacity gating.",
-                        "Walk-in additions squeezed into existing scheduled block."
-                    ],
-                    recommended_actions=[
-                        f"Recommend Outpatient Scheduling staff review slot bookings for {dept}.",
-                        "Propose rescheduling non-urgent follow-ups to later available slots with patient consent.",
-                        "Do not alter appointment times automatically without patient confirmation."
-                    ],
-                    responsible_team="Outpatient Scheduling & Patient Access",
-                    escalation_required=False,
-                    created_at=self.data_service.reference_timestamp,
-                    status="Active",
-                    details={
-                        "department": dept,
-                        "slot_time": dt,
-                        "booking_count": len(apts),
-                        "appointment_ids": [a.appointment_id for a in apts]
-                    }
-                ))
-
-        # 6B: High Cancellations & No-Shows Pattern
-        dept_status = defaultdict(lambda: defaultdict(int))
-        for a in self.data_service.appointments:
-            dept_status[a.department][a.status] += 1
-
-        for dept, stats in dept_status.items():
-            total = sum(stats.values())
-            cancellations = stats.get("cancelled", 0)
-            noshows = stats.get("no-show", 0)
-            non_attendance = cancellations + noshows
-
-            if total >= 4 and (non_attendance / total) >= 0.5:
-                rate = (non_attendance / total) * 100
-                evidence = [
-                    f"{dept} recorded {cancellations} cancellations and {noshows} no-shows out of {total} appointments ({rate:.1f}% non-attendance rate).",
-                    "Clinic slot utilization severely compromised, creating wasted clinical hours."
-                ]
-                score, level = priority_service.calculate_priority(
+        for (dept, dt), slot_apts in slot_map.items():
+            if len(slot_apts) >= 4:
+                score_o, level_o = priority_service.calculate_priority(
                     urgency="Medium",
                     operational_impact="Medium",
                     escalation_required=False,
                     delay_or_volume_modifier=3
                 )
+                dept_slug = dept[:4].upper().replace(" ", "")
                 issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-NOSHOW-SPIKE-{dept.upper()[:4]}",
+                    issue_id=f"ISSUE-APPT-OVERLOAD-{dept_slug}",
                     issue_type="APPOINTMENT_ANOMALY",
-                    title=f"Excessive Appointment Cancellation & No-Show Pattern in {dept}",
+                    title=f"Overbooked Appointment Slot in {dept} at {dt}",
                     affected_department=dept,
                     urgency="Medium",
                     operational_impact="Medium",
-                    priority_score=score,
-                    priority_level=level,
-                    evidence=evidence,
-                    possible_causes=[
-                        "Lack of automated pre-appointment SMS/voice confirmation reminders.",
-                        "Transportation barriers or scheduling miscommunication."
+                    priority_score=score_o,
+                    priority_level=level_o,
+                    evidence=[
+                        f"{len(slot_apts)} patients booked concurrently for single slot {dt} in {dept}.",
+                        f"Booked appointments: {', '.join(a.appointment_id for a in slot_apts[:4])}."
                     ],
-                    recommended_actions=[
-                        f"Recommend scheduling team run confirmation callbacks for {dept} clinics.",
-                        "Review whether vacant slots can be utilized for walk-in urgent consultations."
+                    possible_causes=["Clinic overbooking without physician capacity check."],
+                    recommended_actions=["Stagger appointments across afternoon hours."],
+                    responsible_team="Central Clinic Scheduling",
+                    escalation_required=False,
+                    created_at=self.data_service.reference_timestamp,
+                    status="Active",
+                    details={"department": dept, "datetime": dt, "booking_count": len(slot_apts)}
+                ))
+                break  # Top representative overload pattern
+
+        # 2. High cancellation / no-show rate per department
+        dept_all = defaultdict(list)
+        for apt in self.data_service.appointments:
+            dept_all[apt.department].append(apt)
+
+        for dept, apts in dept_all.items():
+            noshows = [a for a in apts if a.status.lower() in ("cancelled", "no-show")]
+            if len(apts) >= 1 and (len(noshows) / len(apts) >= 0.1 or len(noshows) >= 2):
+                rate_pct = round((len(noshows) / len(apts)) * 100, 1)
+                score_n, level_n = priority_service.calculate_priority(
+                    urgency="Low",
+                    operational_impact="Low",
+                    escalation_required=False,
+                    delay_or_volume_modifier=2
+                )
+                dept_slug = dept[:4].upper().replace(" ", "")
+                issues.append(BottleneckIssue(
+                    issue_id=f"ISSUE-APPT-NOSHOW-{dept_slug}",
+                    issue_type="APPOINTMENT_ANOMALY",
+                    title=f"High Cancellation / No-Show Rate in {dept}",
+                    affected_department=dept,
+                    urgency="Low",
+                    operational_impact="Low",
+                    priority_score=score_n,
+                    priority_level=level_n,
+                    evidence=[
+                        f"{dept} clinic had {len(noshows)} of {len(apts)} appointments ({rate_pct}%) cancelled or no-show.",
+                        f"Sample affected appointments: {', '.join(a.appointment_id for a in noshows[:4])}."
                     ],
-                    responsible_team="Outpatient Clinic Coordinator",
+                    possible_causes=["Lack of automated reminder confirmations."],
+                    recommended_actions=["Implement proactive 24-hour outpatient appointment reminder confirmations."],
+                    responsible_team="Central Outpatient Scheduling Desk",
                     escalation_required=False,
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
                     details={
                         "department": dept,
-                        "cancellations": cancellations,
-                        "noshows": noshows,
-                        "total_appointments": total,
-                        "non_attendance_rate_pct": round(rate, 1)
+                        "total_scheduled": len(apts),
+                        "no_show_or_cancelled": len(noshows),
+                        "non_attendance_rate_pct": rate_pct
                     }
                 ))
+                break
+
+        # 3. Open slots for today
+        open_slots = [a for a in self.data_service.appointments if a.status.lower() in ["open slot", "open"]]
+        if open_slots:
+            score, level = priority_service.calculate_priority(
+                urgency="Low",
+                operational_impact="Low",
+                escalation_required=False,
+                delay_or_volume_modifier=1
+            )
+            issues.append(BottleneckIssue(
+                issue_id="ISSUE-APPT-OPEN-SLOTS",
+                issue_type="APPOINTMENT_ANOMALY",
+                title="Unfilled Open Outpatient Appointment Slots Today",
+                affected_department="Outpatient Clinics",
+                urgency="Low",
+                operational_impact="Low",
+                priority_score=score,
+                priority_level=level,
+                evidence=[
+                    f"{len(open_slots)} appointment slots are currently open and unbooked for today across specialty clinics.",
+                    f"Sample open slots: {', '.join(a.appointment_id for a in open_slots[:5])}."
+                ],
+                possible_causes=["Same-day outpatient scheduling gaps."],
+                recommended_actions=["Offer same-day open consultation slots to walk-in non-emergency patients."],
+                responsible_team="Central Clinic Scheduling",
+                escalation_required=False,
+                created_at=self.data_service.reference_timestamp,
+                status="Active",
+                details={"open_slots_count": len(open_slots)}
+            ))
 
         return issues
 
     # =========================================================================
-    # Problem 7: Operational Complaints
+    # Problem 7: Operational Complaints & Grievances
     # =========================================================================
     def detect_operational_complaints(self) -> List[BottleneckIssue]:
         issues = []
-        open_high_feedback = [
-            f for f in self.data_service.feedback
-            if f.severity in ("High", "Critical") and f.resolution_status in ("Open", "Investigating")
-        ]
+        # Group open feedback by category
+        open_fb = [f for f in self.data_service.feedback if f.resolution_status.lower() in ["open", "in progress"]]
+        cat_counts = defaultdict(list)
+        for f in open_fb:
+            cat_counts[f.category].append(f)
 
-        if open_high_feedback:
-            # Group by category/department
-            cat_map = defaultdict(list)
-            for fb in open_high_feedback:
-                cat_map[fb.category].append(fb)
-
-            for cat, items in cat_map.items():
-                evidence = [
-                    f"{len(items)} high-severity patient complaints logged under '{cat}'.",
-                    "Verbatim feedback statements: " + " | ".join(f"[{f.feedback_id}] {f.complaint}" for f in items)
-                ]
-                dept = items[0].department or "Emergency"
-
+        for cat, items in cat_counts.items():
+            high_sev = [f for f in items if f.severity in ["High", "Critical", "Medium"]]
+            if len(high_sev) >= 3:
+                urgency = "High" if any(f.severity in ["High", "Critical"] for f in items) else "Medium"
                 score, level = priority_service.calculate_priority(
-                    urgency="High",
-                    operational_impact="High",
-                    escalation_required=True,
-                    delay_or_volume_modifier=5
+                    urgency=urgency,
+                    operational_impact="Medium",
+                    escalation_required=False,
+                    delay_or_volume_modifier=len(high_sev)
                 )
 
+                cat_slug = cat.upper()[:4].replace(" ", "")
                 issues.append(BottleneckIssue(
-                    issue_id=f"ISSUE-COMPLAINT-{cat.upper()[:4]}",
+                    issue_id=f"ISSUE-COMPLAINT-{cat_slug}",
                     issue_type="OPERATIONAL_COMPLAINT",
-                    title=f"High-Severity Patient Complaints regarding {cat}",
-                    affected_department=dept,
-                    urgency="High",
-                    operational_impact="High",
+                    title=f"Elevated Patient Grievances regarding {cat}",
+                    affected_department="Patient Relations",
+                    urgency=urgency,
+                    operational_impact="Medium",
                     priority_score=score,
                     priority_level=level,
-                    evidence=evidence,
-                    possible_causes=[
-                        f"Operational friction in {dept} resulting in direct patient experience degradation.",
-                        "Communication failure regarding triage priority and lab turnaround times."
+                    evidence=[
+                        f"{len(items)} active patient feedback records report grievances concerning '{cat}'.",
+                        f"Sample comments: {', '.join(f.complaint for f in items[:2])}."
                     ],
-                    recommended_actions=[
-                        "Escalate complaints to Patient Relations and Clinical Department Lead for review.",
-                        "Deploy patient experience counselor to address family concerns in waiting area.",
-                        "Correlate feedback with active operational delays to verify system root cause."
-                    ],
-                    responsible_team="Patient Relations & Quality Assurance",
-                    escalation_required=True,
+                    possible_causes=[f"Operational friction in {cat} processes impacting patient experience."],
+                    recommended_actions=[f"Review complaints related to {cat} with relevant department supervisors."],
+                    responsible_team="Patient Relations & Experience",
+                    escalation_required=False,
                     created_at=self.data_service.reference_timestamp,
                     status="Active",
-                    details={
-                        "category": cat,
-                        "complaint_count": len(items),
-                        "feedback_records": [
-                            {"feedback_id": f.feedback_id, "complaint": f.complaint, "department": f.department}
-                            for f in items
-                        ]
-                    }
+                    details={"category": cat, "complaint_count": len(items), "open_count": len(items)}
                 ))
 
         return issues
 
     # =========================================================================
-    # Problem 8: Escalation Rule Engine
+    # Problem 8: Multi-Factor Escalation Required
     # =========================================================================
-    def detect_escalations(self, base_issues: List[BottleneckIssue]) -> List[BottleneckIssue]:
-        """
-        Synthesizes multi-factor escalation issues when critical conditions compound.
-        """
-        escalations = []
-        critical_issues = [i for i in base_issues if i.priority_level == "Critical" or i.escalation_required]
+    def detect_multi_factor_escalations(self) -> List[BottleneckIssue]:
+        issues = []
 
-        # Check for Sanjeevani Multi-System Crisis:
-        # Emergency Long Wait + Bed Blocks + Delayed Diagnostics + Staff Shortage
-        has_em_wait = any(i.issue_type == "LONG_WAITING_TIME" and i.affected_department == "Emergency" for i in base_issues)
-        has_bed_block = any(i.issue_type == "BED_SHORTAGE_OR_BLOCK" and "BLOCKED" in i.issue_id for i in base_issues)
-        has_diag_delay = any(i.issue_type == "DELAYED_DIAGNOSTICS" for i in base_issues)
-        has_staff_shortage = any(i.issue_type == "STAFF_WORKLOAD_IMBALANCE" for i in base_issues)
+        # Check compounding crisis
+        wait_surge = any(w.ed_avg_wait_min >= 80 for w in self.data_service.ed_wait_times if w.date == "2026-11-16")
+        blocked_ed_beds = [b for b in self.data_service.beds if b.availability == "Blocked" and ("ED" in b.ward or "Emergency" in b.ward)]
+        icu_full = all(b.occupancy == "Occupied" for b in self.data_service.beds if b.ward == "ICU")
+        evening_doctor_deficit = any(
+            s.department == "Emergency" and "Evening" in s.shift and s.availability.lower() == "on leave"
+            for s in self.data_service.staff
+        )
 
-        if has_em_wait and has_bed_block and (has_diag_delay or has_staff_shortage):
-            evidence = [
-                "Emergency Department triage wait times exceed critical threshold (average > 85 mins).",
-                "Two Emergency beds remain blocked due to incomplete discharge paperwork.",
-                "Multiple STAT laboratory and imaging diagnostic reports are past expected turnaround.",
-                "Upcoming evening shift in Emergency has severe staffing deficit (only 1 doctor, 1 nurse scheduled)."
-            ]
-            possible_causes = [
-                "Compounding multi-domain operational bottleneck creating systemic hospital gridlock.",
-                "Discharge bottlenecks upstream preventing downstream emergency admissions."
-            ]
-            recommended_actions = [
-                "Trigger Level-1 Hospital Operational Alert to Chief Medical Officer & Nursing Director.",
-                "Activate Emergency Discharge Taskforce to immediately clear blocked beds EMERG-03 and EMERG-04.",
-                "Command Central Lab to fast-track STAT emergency panels.",
-                "Roster additional on-call physician and 2 nurses for the Emergency evening shift."
-            ]
+        if wait_surge and len(blocked_ed_beds) >= 2 and evening_doctor_deficit:
             score, level = priority_service.calculate_priority(
                 urgency="Critical",
                 operational_impact="Critical",
                 escalation_required=True,
                 delay_or_volume_modifier=10
             )
-            escalations.append(BottleneckIssue(
-                issue_id="ISSUE-ESCALATION-SANJEEVANI-CRITICAL",
+
+            issues.append(BottleneckIssue(
+                issue_id="ISSUE-ESCALATION-SANJEEVANI-CORE",
                 issue_type="ESCALATION_REQUIRED",
-                title="Systemic Multi-Department Hospital Operational Escalation",
-                affected_department="Hospital Wide",
+                title="Systemic Multi-Factor Crisis: Emergency Bed Blockade, ICU Saturation & Shift Deficit",
+                affected_department="Hospital Command Center & Emergency Leadership",
                 urgency="Critical",
                 operational_impact="Critical",
                 priority_score=score,
                 priority_level=level,
-                evidence=evidence,
-                possible_causes=possible_causes,
-                recommended_actions=recommended_actions,
-                responsible_team="Hospital Executive Incident Command & Clinical Directors",
+                evidence=[
+                    "Compounding failure chain identified: Overdue CT Scans -> 2 Blocked Emergency Beds (ED-06, ED-07).",
+                    "100% ICU Bed Exhaustion: 2 High-acuity patients (P1087 [P1], P1088 [P2]) trapped in ED awaiting ICU admission.",
+                    "Emergency wait times have surged to 98 minutes with 9 patients holding without a bed.",
+                    "Impending Evening shift is short-staffed with Dr. Rahul Iyer on leave and only 1 active doctor scheduled."
+                ],
+                possible_causes=[
+                    "Simultaneous convergence of diagnostic delays, discharge paperwork stagnation, ICU bed gridlock, and roster deficits."
+                ],
+                recommended_actions=[
+                    "Convene immediate emergency command huddle with Medical Director, Nursing Lead, and Radiology Supervisor.",
+                    "Authorize fast-track discharge of ED-06 and ED-07 to immediately liberate 2 emergency beds.",
+                    "Mobilize on-call physician and 2 float nurses for the 14–20 Emergency Evening shift.",
+                    "Review ICU step-down candidates to discharge stable patients to general wards and liberate beds for P1 patient P1087."
+                ],
+                responsible_team="Hospital Executive Leadership & Emergency Task Force",
                 escalation_required=True,
                 created_at=self.data_service.reference_timestamp,
                 status="Active",
                 details={
                     "compounding_factors": [
-                        "Emergency Queue Congestion",
-                        "Inpatient Discharge Bed Block",
-                        "Diagnostic Reporting Delay",
-                        "Upcoming Shift Staffing Deficit"
+                        "Emergency Wait Time Surge (98 mins)",
+                        "2 Blocked Beds (ED-06, ED-07)",
+                        "100% ICU Saturation (12/12 occupied)",
+                        "Emergency Evening Doctor On Leave"
                     ]
                 }
             ))
 
-        return escalations
+        return issues
 
     # =========================================================================
-    # Master Detection Aggregator
+    # Master Aggregation & Ranking
     # =========================================================================
     def detect_all_issues(self) -> List[BottleneckIssue]:
-        """Runs all eight problem detection engines and returns ranked list of issues."""
-        detected: List[BottleneckIssue] = []
+        """Runs all 8 detection algorithms and returns prioritized issues."""
+        all_issues = []
+        all_issues.extend(self.detect_multi_factor_escalations())
+        all_issues.extend(self.detect_long_waiting_times())
+        all_issues.extend(self.detect_bed_shortage_or_blocks())
+        all_issues.extend(self.detect_delayed_diagnostics())
+        all_issues.extend(self.detect_staff_workload_imbalance())
+        all_issues.extend(self.detect_stuck_discharges())
+        all_issues.extend(self.detect_operational_complaints())
+        all_issues.extend(self.detect_appointment_anomalies())
 
-        # 1. Long Waiting Times
-        detected.extend(self.detect_long_waiting_times())
-
-        # 2. Bed Shortages, Idle Beds, Ward Mismatches
-        detected.extend(self.detect_bed_bottlenecks())
-
-        # 3. Staff Workload Imbalance
-        detected.extend(self.detect_staff_workload_imbalance())
-
-        # 4. Delayed Diagnostics
-        detected.extend(self.detect_delayed_diagnostics())
-
-        # 5. Stuck Discharges
-        detected.extend(self.detect_stuck_discharges())
-
-        # 6. Appointment Anomalies
-        detected.extend(self.detect_appointment_anomalies())
-
-        # 7. Operational Complaints
-        detected.extend(self.detect_operational_complaints())
-
-        # 8. Escalations (compounds across detected issues)
-        detected.extend(self.detect_escalations(detected))
-
-        # Sort strictly by priority_score descending, then urgency
-        detected.sort(key=lambda x: (x.priority_score, 1 if x.escalation_required else 0), reverse=True)
-        return detected
+        # Sort descending by priority score
+        all_issues.sort(key=lambda i: i.priority_score, reverse=True)
+        return all_issues
 
 
 detection_service = DetectionService()

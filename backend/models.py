@@ -9,16 +9,16 @@ from pydantic import BaseModel, Field
 
 
 # ============================================================================
-# Core Synthetic Hospital Data Models
+# Core Hospital Data Models
 # ============================================================================
 
 class Patient(BaseModel):
     """Hospital patient record."""
     patient_id: str = Field(..., description="Unique patient identifier")
-    age_group: str = Field(..., description="Age bracket: Pediatric, Adult, Middle-Aged, Geriatric")
+    age_group: str = Field(..., description="Age bracket: Pediatric, Adult, Middle-Aged, Geriatric, 0-12, 13-17, 18-35, 36-55, 56-70, 70+")
     department: str = Field(..., description="Primary attending department")
-    visit_type: str = Field(..., description="Emergency, Outpatient, Inpatient, Follow-up")
-    status: str = Field(..., description="Waiting, In Consultation, Admitted, Under Observation, Discharged")
+    visit_type: str = Field(..., description="Emergency, Outpatient, Inpatient, Follow-up, ED, IPD")
+    status: str = Field(..., description="Waiting, In Consultation, Admitted, Under Observation, Discharged, In bed, Waiting in ED – no bed, Awaiting ICU bed")
 
 
 class Appointment(BaseModel):
@@ -26,22 +26,24 @@ class Appointment(BaseModel):
     appointment_id: str = Field(..., description="Unique appointment identifier")
     doctor: str = Field(..., description="Attending physician name")
     department: str = Field(..., description="Hospital department")
-    datetime: str = Field(..., description="Scheduled appointment datetime in ISO 8601")
-    status: str = Field(..., description="scheduled, completed, cancelled, or no-show")
-    waiting_time: int = Field(..., ge=0, description="Waiting time in minutes")
+    datetime: str = Field(..., description="Scheduled appointment datetime in ISO 8601 or YYYY-MM-DD HH:MM")
+    status: str = Field(..., description="scheduled, completed, cancelled, no-show, Open slot")
+    waiting_time: int = Field(default=0, ge=0, description="Waiting time in minutes")
+    waiting_time_min: Optional[float] = Field(None, description="Original waiting time float in minutes")
 
 
 class Bed(BaseModel):
     """Hospital bed unit representation."""
     bed_id: str = Field(..., description="Unique bed identifier")
-    ward: str = Field(..., description="Ward name e.g. Emergency Ward, ICU, General Male")
-    bed_type: str = Field(..., description="General, Emergency, ICU, Step-down")
-    occupancy: str = Field(..., description="Occupied, Unoccupied")
-    availability: str = Field(..., description="Available, Occupied, Blocked, Cleaning")
+    ward: str = Field(..., description="Ward name e.g. Emergency Ward, ED, ICU, General Ward A, General Ward B, Paediatric Ward, Ortho Ward, Maternity")
+    bed_type: str = Field(..., description="General, Emergency, ICU, Step-down, Paediatric, Orthopaedic, Maternity")
+    occupancy: str = Field(..., description="Occupied, Unoccupied, Free")
+    availability: str = Field(default="Available", description="Available, Occupied, Blocked, Cleaning")
     admission_discharge_status: str = Field(
         ...,
-        description="Ready, Occupied, Pending Discharge, Discharge Paperwork Blocked, Cleaning Required"
+        description="Ready, Occupied, Pending Discharge, Discharge Paperwork Blocked, Cleaning Required, Admitted, Discharge pending, Available"
     )
+    patient_id: Optional[str] = Field(None, description="ID of patient currently in bed")
     current_admission_id: Optional[str] = Field(None, description="Linked admission ID if occupied or blocked")
     blocked_reason: Optional[str] = Field(None, description="Reason if bed is blocked")
 
@@ -52,59 +54,77 @@ class Staff(BaseModel):
     name: str = Field(..., description="Staff member full name")
     role: str = Field(..., description="Doctor, Nurse, Support Staff, Technician")
     department: str = Field(..., description="Assigned clinical or operational department")
-    shift: str = Field(..., description="Morning, Evening, Night")
-    availability: str = Field(..., description="Available, On Duty, On Break, Unavailable, On Leave")
-    workload: str = Field(..., description="Low, Normal, High, Critical")
+    date: Optional[str] = Field(None, description="Roster date YYYY-MM-DD")
+    shift: str = Field(..., description="Morning, Evening, Night, or with hours e.g. Morning (08–14)")
+    availability: str = Field(..., description="Available, On Duty, On Break, Unavailable, On leave")
+    patients_assigned: Optional[int] = Field(default=0, description="Number of patients assigned to this staff member")
+    workload: str = Field(default="Normal", description="Low, Normal, High, Critical, Unavailable")
 
 
 class Diagnostic(BaseModel):
     """Laboratory and diagnostic imaging request record."""
     test_id: str = Field(..., description="Unique diagnostic order identifier")
-    test: str = Field(..., description="Test name e.g. CBC, Troponin-T, Chest X-Ray")
+    test: str = Field(..., description="Test name e.g. CBC, Troponin-T, Chest X-Ray, CT Scan, MRI")
     patient: str = Field(..., description="Patient ID referencing a valid patient")
+    patient_id: Optional[str] = Field(None, description="Patient ID alias")
     department: str = Field(..., description="Ordering department")
-    status: str = Field(..., description="pending, in-progress, completed, overdue")
-    requested_time: str = Field(..., description="Order timestamp in ISO 8601")
-    expected_completion: str = Field(..., description="Expected turnaround timestamp in ISO 8601")
+    status: str = Field(..., description="pending, in-progress, completed, overdue, Report pending, Requested")
+    requested_time: str = Field(..., description="Order timestamp")
+    expected_completion: str = Field(..., description="Expected turnaround timestamp")
     completed_time: Optional[str] = Field(None, description="Actual completion timestamp if finished")
+    is_overdue: Optional[bool] = Field(False, description="Flag indicating test is overdue relative to snapshot")
 
 
 class Admission(BaseModel):
     """Inpatient hospital admission record."""
     admission_id: str = Field(..., description="Unique admission record identifier")
     patient_id: str = Field(..., description="Patient ID referencing a valid patient")
-    admission_time: str = Field(..., description="Admission timestamp in ISO 8601")
+    admission_time: str = Field(..., description="Admission timestamp")
     department: str = Field(..., description="Admitting department")
     ward: str = Field(..., description="Assigned ward")
     bed_id: Optional[str] = Field(None, description="Assigned bed ID")
-    expected_discharge: str = Field(..., description="Target discharge timestamp in ISO 8601")
-    status: str = Field(..., description="Active, Discharging, Discharged")
+    expected_discharge: Optional[str] = Field(None, description="Target discharge timestamp")
+    status: str = Field(..., description="Active, Discharging, Discharged, Admitted, Awaiting bed")
+    triage_priority: Optional[str] = Field(None, description="Triage priority for awaiting bed (P1, P2)")
 
 
 class Discharge(BaseModel):
     """Inpatient discharge request and clearance workflow."""
     discharge_id: str = Field(..., description="Unique discharge tracking identifier")
-    admission_id: str = Field(..., description="Admission ID referencing a valid admission")
+    request_id: Optional[str] = Field(None, description="Original request ID from CSV")
+    admission_id: Optional[str] = Field(None, description="Admission ID referencing a valid admission")
     patient_id: str = Field(..., description="Patient ID referencing a valid patient")
-    request: str = Field(..., description="Pending, Approved, In Review")
+    ward: Optional[str] = Field(None, description="Associated ward")
+    bed_id: Optional[str] = Field(None, description="Associated bed ID")
+    request: str = Field(default="Pending", description="Pending, Approved, In Review")
     pending_tasks: List[str] = Field(default_factory=list, description="Pending clearance tasks")
     medication_status: str = Field(
         ...,
-        description="Operational status only: Pending Verification, Completed, Ready for Reconciliation"
+        description="Operational status only: Pending Verification, Completed, Ready for Reconciliation, Pending"
     )
     document_status: str = Field(..., description="Incomplete, Pending Signature, Cleared")
-    discharge_initiated_at: str = Field(..., description="Discharge request timestamp in ISO 8601")
+    discharge_initiated_at: Optional[str] = Field(None, description="Discharge request timestamp")
+    requested_time: Optional[str] = Field(None, description="Requested time from CSV")
 
 
 class Feedback(BaseModel):
     """Patient and family operational feedback or complaint."""
     feedback_id: str = Field(..., description="Unique feedback record identifier")
     complaint: str = Field(..., description="Descriptive feedback or complaint statement")
-    category: str = Field(..., description="Waiting Time, Bed Shortage, Diagnostics Delay, Staffing, Facility")
+    comment: Optional[str] = Field(None, description="Raw feedback comment from CSV")
+    category: str = Field(..., description="Waiting Time, Bed Shortage, Diagnostics Delay, Staffing, Facility, Billing, Food, Cleanliness, Staff behaviour, Discharge delay")
     department: Optional[str] = Field(None, description="Referenced department if identifiable")
     severity: str = Field(..., description="Low, Medium, High, Critical")
-    resolution_status: str = Field(..., description="Open, Investigating, Escalated, Resolved")
-    timestamp: str = Field(..., description="Feedback logged timestamp in ISO 8601")
+    resolution_status: str = Field(..., description="Open, Investigating, Escalated, Resolved, In progress")
+    timestamp: str = Field(..., description="Feedback logged timestamp")
+    date: Optional[str] = Field(None, description="Date from CSV")
+
+
+class EDWaitTime(BaseModel):
+    """Emergency department hourly average wait time."""
+    date: str = Field(..., description="Date YYYY-MM-DD")
+    hour: str = Field(..., description="Hour of the day HH:MM")
+    ed_avg_wait_min: int = Field(..., description="Average Emergency waiting time in minutes")
 
 
 # ============================================================================
@@ -233,13 +253,13 @@ class ActionReviewRequest(BaseModel):
     """Payload to approve or reject a simulated action."""
     status: str = Field(..., description="Approved or Rejected")
     reviewer_label: str = Field("Authorized Operator", description="Operator / Shift Manager label")
-    notes: Optional[str] = Field(None, description="Review notes or approval condition")
+    notes: Optional[str] = None
 
 
 class ActionCompleteRequest(BaseModel):
     """Payload to mark an approved simulated action as completed."""
     reviewer_label: str = Field("Authorized Operator", description="Operator / Staff label")
-    notes: Optional[str] = Field(None, description="Completion summary notes")
+    notes: Optional[str] = None
 
 
 class AuditLogEntry(BaseModel):
@@ -252,6 +272,10 @@ class AuditLogEntry(BaseModel):
     reviewer_label: str
     notes: Optional[str] = None
 
+
+# ============================================================================
+# Dashboard & Summary Aggregates
+# ============================================================================
 
 class DashboardSummary(BaseModel):
     """High-level operational health dashboard for the hospital."""
