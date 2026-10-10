@@ -7,6 +7,7 @@ import {
   Patient,
   Appointment,
   Bed,
+  BedUpdateRequest,
   Staff,
   Diagnostic,
   Admission,
@@ -133,6 +134,17 @@ class ApiService {
   public async getBeds(params?: { ward?: string; bed_type?: string; occupancy?: string; availability?: string }): Promise<Bed[]> {
     const query = new URLSearchParams(params as any).toString();
     return this.request(`/data/beds${query ? `?${query}` : ''}`);
+  }
+
+  public async getBed(bedId: string): Promise<Bed> {
+    return this.request(`/data/beds/${encodeURIComponent(bedId)}`);
+  }
+
+  public async updateBed(bedId: string, data: BedUpdateRequest): Promise<Bed> {
+    return this.request(`/data/beds/${encodeURIComponent(bedId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   }
 
   public async getStaff(params?: { department?: string; shift?: string; availability?: string; role?: string }): Promise<Staff[]> {

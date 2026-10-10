@@ -30,14 +30,14 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>{title}</h3>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
           <button
             onClick={onClose}
             style={{
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              color: '#64748b',
+              color: 'var(--text-muted)',
               padding: '0.25rem',
               borderRadius: '4px',
             }}

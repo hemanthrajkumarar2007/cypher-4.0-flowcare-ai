@@ -27,7 +27,16 @@ export interface Bed {
   occupancy: 'Occupied' | 'Unoccupied' | string;
   availability: 'Available' | 'Occupied' | 'Blocked' | 'Cleaning' | string;
   admission_discharge_status: string;
+  patient_id?: string | null;
   current_admission_id?: string | null;
+  blocked_reason?: string | null;
+}
+
+export interface BedUpdateRequest {
+  availability?: string;
+  occupancy?: string;
+  admission_discharge_status?: string;
+  patient_id?: string | null;
   blocked_reason?: string | null;
 }
 

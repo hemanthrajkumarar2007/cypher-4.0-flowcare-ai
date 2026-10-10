@@ -4,6 +4,7 @@ Hospital: Sanjeevani Multispeciality Hospital
 Cypher 2026 Hackathon — "The Blocked Bed" Challenge
 """
 
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from models import (
     Patient,
     Appointment,
     Bed,
+    BedUpdateRequest,
     Staff,
     Diagnostic,
     Admission,
@@ -198,6 +200,63 @@ def get_beds(
         occupancy=occupancy,
         availability=availability
     )
+
+
+@app.get(
+    "/data/beds/{bed_id}",
+    tags=["Data & Quality"],
+    summary="Get Bed by Identifier",
+    response_model=Bed
+)
+def get_bed(bed_id: str):
+    """Retrieve detailed state and allocation information for an individual hospital bed."""
+    bed = hospital_data_service.get_bed_by_id(bed_id)
+    if not bed:
+        raise HTTPException(status_code=404, detail=f"Bed '{bed_id}' not found.")
+    return bed
+
+
+@app.patch(
+    "/data/beds/{bed_id}",
+    tags=["Data & Quality"],
+    summary="Update Bed Allocation or Availability State",
+    response_model=Bed
+)
+@app.put(
+    "/data/beds/{bed_id}",
+    tags=["Data & Quality"],
+    include_in_schema=False,
+    response_model=Bed
+)
+def update_bed(bed_id: str, payload: BedUpdateRequest):
+    """
+    Updates the occupancy, availability, or patient allocation of a hospital bed.
+    Maintains mutual state consistency (e.g. Available => Unoccupied) and logs
+    the transition to the review audit trail.
+    """
+    updated = hospital_data_service.update_bed(
+        bed_id=bed_id,
+        availability=payload.availability,
+        occupancy=payload.occupancy,
+        admission_discharge_status=payload.admission_discharge_status,
+        patient_id=payload.patient_id,
+        blocked_reason=payload.blocked_reason
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Bed '{bed_id}' not found.")
+
+    # Log to action_service audit trail
+    action_service.audit_log.append(AuditLogEntry(
+        audit_id=f"AUDIT-BED-{len(action_service.audit_log) + 1:04d}",
+        action_id=f"BED-STATE-{bed_id}",
+        previous_status="Active State",
+        new_status=f"{updated.availability} ({updated.occupancy})",
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        reviewer_label="Bed Management Operations / Charge Nurse",
+        notes=f"Bed {bed_id} state modified. Ward: {updated.ward}. Patient: {updated.patient_id or 'None'}. Reason: {updated.blocked_reason or 'None'}"
+    ))
+
+    return updated
 
 
 @app.get(

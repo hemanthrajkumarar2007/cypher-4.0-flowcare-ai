@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { RefreshCw, RotateCcw, Wifi, WifiOff, Clock } from 'lucide-react';
+import { RefreshCw, RotateCcw, Wifi, WifiOff, Clock, Sun, Moon } from 'lucide-react';
 import { NavigationTab } from '../types';
 
 interface HeaderProps {
   currentTab: NavigationTab;
   backendOnline: boolean;
   referenceTime: string;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
   onRefresh: () => void;
   onResetDemo: () => Promise<void>;
   isRefreshing?: boolean;
@@ -15,6 +17,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentTab,
   backendOnline,
   referenceTime,
+  theme,
+  onToggleTheme,
   onRefresh,
   onResetDemo,
   isRefreshing = false,
@@ -75,15 +79,16 @@ export const Header: React.FC<HeaderProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '0.4rem',
-            background: '#f1f5f9',
+            background: 'var(--bg-card-subtle)',
+            border: '1px solid var(--border-subtle)',
             padding: '0.35rem 0.65rem',
             borderRadius: '6px',
             fontSize: '0.75rem',
-            color: '#475569',
+            color: 'var(--text-secondary)',
             fontWeight: 500,
           }}
         >
-          <Clock size={14} color="#64748b" />
+          <Clock size={14} color="var(--text-muted)" />
           <span>Ref: {referenceTime.replace('T', ' ')}</span>
         </div>
 
@@ -93,18 +98,28 @@ export const Header: React.FC<HeaderProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '0.4rem',
-            background: backendOnline ? '#f0fdf4' : '#fef2f2',
-            border: `1px solid ${backendOnline ? '#bbf7d0' : '#fecaca'}`,
+            background: backendOnline ? 'var(--success-green-light)' : 'var(--critical-red-light)',
+            border: `1px solid ${backendOnline ? 'var(--success-green-border)' : 'var(--critical-red-border)'}`,
             padding: '0.35rem 0.65rem',
             borderRadius: '6px',
             fontSize: '0.75rem',
             fontWeight: 600,
-            color: backendOnline ? '#166534' : '#991b1b',
+            color: backendOnline ? 'var(--success-green)' : 'var(--critical-red)',
           }}
         >
-          {backendOnline ? <Wifi size={14} color="#16a34a" /> : <WifiOff size={14} color="#dc2626" />}
+          {backendOnline ? <Wifi size={14} color="var(--success-green)" /> : <WifiOff size={14} color="var(--critical-red)" />}
           <span>{backendOnline ? 'Backend Online (Port 8000)' : 'Backend Offline'}</span>
         </div>
+
+        {/* Dual Mode Black / White Theme Toggle */}
+        <button
+          className="theme-toggle-btn"
+          onClick={onToggleTheme}
+          title="Toggle Black & White / Dark & Light Mode (Ctrl+D)"
+        >
+          {theme === 'dark' ? <Sun size={14} color="#f59e0b" /> : <Moon size={14} color="#3b82f6" />}
+          <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+        </button>
 
         {/* Refresh Button */}
         <button
@@ -122,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="btn btn-outline btn-sm"
           onClick={handleReset}
           disabled={resetting}
-          style={{ color: '#d97706', borderColor: '#fde68a' }}
+          style={{ color: 'var(--high-amber)', borderColor: 'var(--high-amber-border)' }}
           title="Reset hospital state back to benchmark scenario"
         >
           <RotateCcw size={14} />

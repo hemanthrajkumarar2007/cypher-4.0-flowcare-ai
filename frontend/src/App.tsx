@@ -4,6 +4,7 @@ import {
   DashboardSummary,
   BottleneckIssue,
   Bed,
+  Patient,
   Diagnostic,
   Admission,
   Discharge,
@@ -28,7 +29,7 @@ import { CausalLinksPage } from './pages/CausalLinksPage';
 import { PriorityQueuePage } from './pages/PriorityQueuePage';
 import { ActionsAuditPage } from './pages/ActionsAuditPage';
 import { DataQualityPage } from './pages/DataQualityPage';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavigationTab>('overview');
@@ -38,10 +39,50 @@ export const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Dual Mode Black / White (Dark / Light Theme)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('flowcare_theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('flowcare_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  // Keyboard shortcut: Ctrl+D or Cmd+D to toggle theme
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        toggleTheme();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Toast Notification System
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   // Core Data States
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [bottlenecks, setBottlenecks] = useState<BottleneckIssue[]>([]);
   const [beds, setBeds] = useState<Bed[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [discharges, setDischarges] = useState<Discharge[]>([]);
@@ -74,6 +115,7 @@ export const App: React.FC = () => {
         dashData,
         bottlenecksData,
         bedsData,
+        patientsData,
         diagData,
         admData,
         disData,
@@ -90,6 +132,7 @@ export const App: React.FC = () => {
         api.getDashboard().catch(() => null),
         api.getBottlenecks().catch(() => []),
         api.getBeds().catch(() => []),
+        api.getPatients().catch(() => []),
         api.getDiagnostics().catch(() => []),
         api.getAdmissions().catch(() => []),
         api.getDischarges().catch(() => []),
@@ -107,6 +150,7 @@ export const App: React.FC = () => {
       setSummary(dashData);
       setBottlenecks(bottlenecksData);
       setBeds(bedsData);
+      setPatients(patientsData);
       setDiagnostics(diagData);
       setAdmissions(admData);
       setDischarges(disData);
@@ -165,6 +209,8 @@ export const App: React.FC = () => {
           currentTab={currentTab}
           backendOnline={backendOnline}
           referenceTime={referenceTime}
+          theme={theme}
+          onToggleTheme={toggleTheme}
           onRefresh={() => loadData(true)}
           onResetDemo={handleResetDemo}
           isRefreshing={isRefreshing}
@@ -203,7 +249,21 @@ export const App: React.FC = () => {
           )}
 
           {currentTab === 'beds' && (
-            <BedsPage beds={beds} loading={loading} />
+            <BedsPage
+              beds={beds}
+              patients={patients}
+              loading={loading}
+              onBedUpdate={async (bedId, updates) => {
+                try {
+                  await api.updateBed(bedId, updates);
+                  showToast(`Bed ${bedId} updated to ${updates.availability || 'new state'}!`, 'success');
+                  await loadData(true);
+                } catch (err: any) {
+                  showToast(`Error updating bed: ${err.message}`, 'error');
+                  throw err;
+                }
+              }}
+            />
           )}
 
           {currentTab === 'diagnostics' && (
@@ -262,6 +322,18 @@ export const App: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* Global Toast Notification */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast-pill toast-${toast.type}`}>
+            {toast.type === 'success' && <CheckCircle2 size={16} color="var(--success-green)" />}
+            {toast.type === 'error' && <AlertCircle size={16} color="var(--critical-red)" />}
+            {toast.type === 'info' && <RefreshCw size={16} color="var(--primary-blue)" />}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

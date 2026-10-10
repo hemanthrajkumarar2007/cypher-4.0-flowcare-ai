@@ -48,6 +48,15 @@ class Bed(BaseModel):
     blocked_reason: Optional[str] = Field(None, description="Reason if bed is blocked")
 
 
+class BedUpdateRequest(BaseModel):
+    """Payload to update bed availability, occupancy, or allocate a patient."""
+    availability: Optional[str] = Field(None, description="Available, Occupied, Blocked, Cleaning")
+    occupancy: Optional[str] = Field(None, description="Occupied, Unoccupied")
+    admission_discharge_status: Optional[str] = Field(None, description="Status detail")
+    patient_id: Optional[str] = Field(None, description="Patient ID to allocate or clear")
+    blocked_reason: Optional[str] = Field(None, description="Reason if blocked")
+
+
 class Staff(BaseModel):
     """Hospital clinical and operational personnel."""
     staff_id: str = Field(..., description="Unique staff identifier")

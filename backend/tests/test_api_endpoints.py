@@ -177,3 +177,34 @@ def test_actions_api_workflow():
     r_audit = client.get(f"/audit-log?action_id={created_id}")
     assert r_audit.status_code == 200
     assert len(r_audit.json()) >= 3
+
+
+def test_bed_get_and_patch_endpoints():
+    # 1. Get existing bed
+    r_get = client.get("/data/beds/ED-01")
+    assert r_get.status_code == 200
+    assert r_get.json()["bed_id"] == "ED-01"
+
+    # 2. Update bed state to Available
+    r_patch = client.patch("/data/beds/ED-01", json={
+        "availability": "Available",
+        "admission_discharge_status": "Ready for Admission"
+    })
+    assert r_patch.status_code == 200
+    updated = r_patch.json()
+    assert updated["availability"] == "Available"
+    assert updated["occupancy"] == "Unoccupied"
+
+    # 3. Allocate patient to bed
+    r_alloc = client.patch("/data/beds/ED-01", json={
+        "patient_id": "P1078",
+        "availability": "Occupied"
+    })
+    assert r_alloc.status_code == 200
+    allocated = r_alloc.json()
+    assert allocated["patient_id"] == "P1078"
+    assert allocated["occupancy"] == "Occupied"
+
+    # 4. Verify 404 on nonexistent bed
+    r_404 = client.get("/data/beds/NONEXISTENT-BED-999")
+    assert r_404.status_code == 404

@@ -201,6 +201,70 @@ class HospitalDataService:
             res = [b for b in res if b.availability.lower() == availability.lower()]
         return res
 
+    def get_bed_by_id(self, bed_id: str) -> Optional[Bed]:
+        for b in self.beds:
+            if b.bed_id.lower() == bed_id.lower():
+                return b
+        return None
+
+    def update_bed(
+        self,
+        bed_id: str,
+        availability: Optional[str] = None,
+        occupancy: Optional[str] = None,
+        admission_discharge_status: Optional[str] = None,
+        patient_id: Optional[str] = None,
+        blocked_reason: Optional[str] = None
+    ) -> Optional[Bed]:
+        bed = self.get_bed_by_id(bed_id)
+        if not bed:
+            return None
+
+        if availability is not None:
+            bed.availability = availability
+            # Maintain logical consistency
+            if availability.lower() == "available":
+                bed.occupancy = "Unoccupied"
+                bed.admission_discharge_status = admission_discharge_status or "Available"
+                bed.blocked_reason = None
+                bed.patient_id = None
+            elif availability.lower() == "occupied":
+                bed.occupancy = "Occupied"
+                bed.admission_discharge_status = admission_discharge_status or "Occupied"
+            elif availability.lower() == "blocked":
+                bed.admission_discharge_status = admission_discharge_status or "Discharge Paperwork Blocked"
+                if blocked_reason:
+                    bed.blocked_reason = blocked_reason
+            elif availability.lower() == "cleaning":
+                bed.occupancy = "Unoccupied"
+                bed.admission_discharge_status = admission_discharge_status or "Cleaning Required"
+                bed.blocked_reason = None
+                bed.patient_id = None
+
+        if occupancy is not None:
+            bed.occupancy = occupancy
+
+        if admission_discharge_status is not None:
+            bed.admission_discharge_status = admission_discharge_status
+
+        if patient_id is not None:
+            if patient_id.strip() == "" or patient_id.lower() in ("none", "null"):
+                bed.patient_id = None
+            else:
+                bed.patient_id = patient_id.strip()
+                bed.occupancy = "Occupied"
+                bed.availability = "Occupied"
+                bed.admission_discharge_status = "Admitted"
+                # Update corresponding patient record if found
+                for p in self.patients:
+                    if p.patient_id.lower() == patient_id.strip().lower():
+                        p.status = "In bed"
+
+        if blocked_reason is not None:
+            bed.blocked_reason = blocked_reason
+
+        return bed
+
     def get_staff(
         self,
         department: Optional[str] = None,
